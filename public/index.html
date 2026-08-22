@@ -86,7 +86,7 @@ footer a{color:var(--bordeaux);font-weight:600;text-decoration:none}
 const btn=document.getElementById('btn'),dial=document.getElementById('dial'),st=document.getElementById('status'),
 conversa=document.getElementById('conversa'),registo=document.getElementById('registo'),campos=document.getElementById('campos'),
 aguarde=document.getElementById('aguarde'),audioEl=document.getElementById('audio');
-let pc,dc,stream,transcript=[],active=false;
+let pc,dc,stream,transcript=[],active=false,reconnects=0,wake,discoTimer;
 const CAT={SIMULACAO:'Simulação',GESTAO_APOLICE:'Gestão de apólice',SINISTRO:'Sinistro',CANCELAMENTO:'Cancelamento',PEDIDO_SEM_RESPOSTA:'Pedido sem resposta',OUTRO:'Outro'};
 const PROD={AUTOMOVEL:'Automóvel',MULTIRRISCOS_HABITACAO:'Multirriscos Habitação',MULTIRRISCOS_CONDOMINIO:'Multirriscos Condomínio',MULTIRRISCOS_EMPRESARIAL:'Multirriscos Empresarial',SAUDE:'Saúde',TVDE:'TVDE',ACIDENTES_TRABALHO_INDIVIDUAL:'Acidentes de Trabalho — Individual',ACIDENTES_TRABALHO_COLETIVO:'Acidentes de Trabalho — Coletivo',RC_GERAL:'Responsabilidade Civil Geral',RC_CONSTRUCAO:'RC Construção',RC_EMPRESARIAL:'RC Empresarial',RC_MEDICOS:'RC Médicos',RC_ARMAS_CACADOR:'RC Armas / Caçador',OBRAS_MONTAGENS:'Obras e Montagens',ANIMAIS:'Animais de Companhia',BICICLETAS_TROTINETAS:'Bicicletas e Trotinetas',VIAGEM:'Viagem',EMBARCACAO:'Embarcação',ACIDENTES_PESSOAIS:'Acidentes Pessoais'};
 function linha(role,text){
@@ -97,43 +97,72 @@ function linha(role,text){
   transcript.push({role,text});
 }
 btn.onclick=()=>active?stop():start();
-async function start(){
-  btn.disabled=true;st.textContent='A ligar…';transcript=[];conversa.innerHTML='';conversa.style.display='none';registo.style.display='none';
-  let s;try{s=await (await fetch('/api/session',{method:'POST'})).json();}catch(_){s={};}
-  if(!s.client_secret){st.textContent='Não foi possível ligar. Tente novamente dentro de momentos.';btn.disabled=false;return;}
-  try{
-    pc=new RTCPeerConnection();
-    pc.ontrack=e=>{audioEl.srcObject=e.streams[0];};
-    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-    pc.onconnectionstatechange=()=>{if(!active)return;
-      if(pc.connectionState==='disconnected'){st.textContent='Ligação instável… um momento.';}
-      else if(pc.connectionState==='failed'){st.textContent='A ligação caiu. A guardar o que foi dito…';stop();}
-      else if(pc.connectionState==='connected'){st.textContent='Em chamada. Fale normalmente.';}};
-    pc.addTrack(stream.getTracks()[0],stream);
-    dc=pc.createDataChannel('oai-events');
-    dc.onopen=()=>{ // pedir a primeira fala da Alfa (instructions de response.create substituem as da sessão nesta resposta, por isso a frase vai explícita)
-      dc.send(JSON.stringify({type:'response.create',response:{instructions:'Fala em português europeu de Portugal, com sotaque europeu (nunca brasileiro). A tua primeira fala é exatamente, palavra por palavra: "'+s.first_message+'"'}}));
-    };
-    dc.onmessage=e=>{
-      const ev=JSON.parse(e.data);
-      if(ev.type==='conversation.item.input_audio_transcription.completed'&&ev.transcript) linha('user',ev.transcript.trim());
-      if(ev.type==='response.output_audio_transcript.done'&&ev.transcript) linha('assistant',ev.transcript.trim());
-      if(ev.type==='response.function_call_arguments.done'&&ev.name==='end_call'){
-        dc.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:ev.call_id,output:'{"ok":true}'}}));
-        st.textContent='A Alfa terminou a chamada.';setTimeout(stop,2500);
+async function manterEcra(){try{wake&&await wake.release();}catch(_){} try{wake=await navigator.wakeLock.request('screen');}catch(_){}}
+async function ligar(retoma){
+  const s=await (await fetch('/api/session',{method:'POST'})).json();
+  if(!s.client_secret) throw new Error('sem sessão');
+  pc=new RTCPeerConnection();
+  pc.ontrack=e=>{audioEl.srcObject=e.streams[0];audioEl.play().catch(()=>{});};
+  if(!stream) stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+  pc.addTrack(stream.getTracks()[0],stream);
+  pc.onconnectionstatechange=()=>{if(!active)return;const cs=pc.connectionState;
+    if(cs==='connected'){clearTimeout(discoTimer);st.textContent='Em chamada. Fale normalmente.';}
+    else if(cs==='disconnected'){st.textContent='Ligação instável… um momento.';clearTimeout(discoTimer);
+      discoTimer=setTimeout(()=>{if(active&&pc.connectionState!=='connected')retomar();},4000);}
+    else if(cs==='failed'){retomar();}};
+  dc=pc.createDataChannel('oai-events');
+  dc.onopen=()=>{ // instructions de response.create substituem as da sessão nesta resposta, por isso vão explícitas
+    if(retoma&&transcript.length){
+      for(const t of transcript){
+        dc.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:t.role==='user'?'user':'assistant',
+          content:[t.role==='user'?{type:'input_text',text:t.text}:{type:'text',text:t.text}]}}));
       }
-      if(ev.type==='error'){st.textContent='Ocorreu um problema na chamada.';}
-    };
-    const offer=await pc.createOffer();await pc.setLocalDescription(offer);
-    const r=await fetch(`${s.base}/v1/realtime/calls`,{method:'POST',headers:{Authorization:`Bearer ${s.client_secret}`,'Content-Type':'application/sdp'},body:offer.sdp});
-    if(!r.ok){st.textContent='Não foi possível ligar. Tente novamente.';btn.disabled=false;return;}
-    await pc.setRemoteDescription({type:'answer',sdp:await r.text()});
-    active=true;btn.disabled=false;dial.classList.add('on');btn.setAttribute('aria-label','Terminar chamada');st.textContent='Em chamada. Fale normalmente.';
-  }catch(_){st.textContent='Precisamos do seu microfone para a chamada. Verifique as permissões.';btn.disabled=false;}
+      dc.send(JSON.stringify({type:'response.create',response:{instructions:'Fala em português europeu de Portugal, com sotaque europeu. A ligação caiu por instantes e foi retomada; a conversa anterior está acima. Continua exatamente de onde estava, sem cumprimentar de novo e sem repetir o que já foi dito. Se estavas à espera de um dado do cliente, repete apenas essa pergunta, numa frase curta.'}}));
+    } else {
+      dc.send(JSON.stringify({type:'response.create',response:{instructions:'Fala em português europeu de Portugal, com sotaque europeu (nunca brasileiro). A tua primeira fala é exatamente, palavra por palavra: "'+s.first_message+'"'}}));
+    }
+  };
+  dc.onmessage=e=>{
+    const ev=JSON.parse(e.data);
+    if(ev.type==='conversation.item.input_audio_transcription.completed'&&ev.transcript) linha('user',ev.transcript.trim());
+    if(ev.type==='response.output_audio_transcript.done'&&ev.transcript) linha('assistant',ev.transcript.trim());
+    if(ev.type==='response.function_call_arguments.done'&&ev.name==='end_call'){
+      dc.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:ev.call_id,output:'{"ok":true}'}}));
+      st.textContent='A Alfa terminou a chamada.';setTimeout(stop,2500);
+    }
+    if(ev.type==='error'){st.textContent='Ocorreu um problema na chamada.';}
+  };
+  const offer=await pc.createOffer();await pc.setLocalDescription(offer);
+  const r=await fetch(`${s.base}/v1/realtime/calls`,{method:'POST',headers:{Authorization:`Bearer ${s.client_secret}`,'Content-Type':'application/sdp'},body:offer.sdp});
+  if(!r.ok) throw new Error('ligação recusada');
+  await pc.setRemoteDescription({type:'answer',sdp:await r.text()});
 }
+async function start(){
+  btn.disabled=true;st.textContent='A ligar…';transcript=[];reconnects=0;conversa.innerHTML='';conversa.style.display='none';registo.style.display='none';
+  try{
+    await ligar(false);
+    active=true;btn.disabled=false;dial.classList.add('on');btn.setAttribute('aria-label','Terminar chamada');st.textContent='Em chamada. Fale normalmente.';
+    manterEcra();
+  }catch(_){st.textContent='Não foi possível ligar. Verifique o microfone e tente novamente.';btn.disabled=false;}
+}
+async function retomar(){
+  if(!active)return;
+  if(reconnects>=2){st.textContent='A ligação caiu. A guardar o que foi dito…';stop();return;}
+  reconnects++;st.textContent='A retomar a chamada…';clearTimeout(discoTimer);
+  try{dc&&dc.close();pc&&pc.close();}catch(_){}
+  try{await ligar(true);}catch(_){st.textContent='Não foi possível retomar. A guardar o que foi dito…';stop();}
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'&&active){
+    manterEcra();audioEl.play().catch(()=>{});
+    if(pc&&pc.connectionState!=='connected')retomar();
+  }
+});
 async function stop(){
-  if(!active)return;active=false;
+  if(!active)return;active=false;clearTimeout(discoTimer);
+  try{wake&&wake.release();}catch(_){}wake=null;
   try{dc&&dc.close();pc&&pc.close();stream&&stream.getTracks().forEach(t=>t.stop());}catch(_){}
+  stream=null;
   dial.classList.remove('on');btn.setAttribute('aria-label','Iniciar chamada');
   if(transcript.length){
     st.textContent='';aguarde.style.display='flex';
