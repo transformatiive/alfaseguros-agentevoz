@@ -1,0 +1,61 @@
+<!doctype html><html lang="pt"><head><meta charset="utf-8"><title>Alfa (OpenAI Realtime) — teste</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{font-family:system-ui,sans-serif;background:#f6f7f9;color:#222;margin:0;padding:1.2rem;max-width:720px}
+h1{font-size:1.2rem;margin:.2rem 0 .6rem}button{font-size:1.05rem;padding:.8rem 1.4rem;border:0;border-radius:999px;background:#0f172a;color:#fff;cursor:pointer}
+button.stop{background:#b91c1c}#status{margin:.6rem 0;color:#555}#log{background:#fff;border:1px solid #ddd;border-radius:8px;padding:.8rem;min-height:160px;max-height:45vh;overflow:auto;font-size:.95rem}
+.u{color:#1d4ed8}.a{color:#111}pre{background:#fff;border:1px solid #ddd;border-radius:8px;padding:.8rem;white-space:pre-wrap;font-size:.85rem}
+small{color:#777}
+</style></head><body>
+<h1>Alfa, assistente virtual da Alfaseguros <small>(OpenAI Realtime)</small></h1>
+<p><small id="meta">modelo: … | voz: …</small></p>
+<button id="btn">Iniciar chamada</button>
+<div id="status">Pronto. Permita o microfone quando pedido.</div>
+<div id="log"></div>
+<h3>Resultado da chamada</h3>
+<pre id="out">(aparece quando a chamada terminar)</pre>
+<audio id="audio" autoplay></audio>
+<script>
+const btn=document.getElementById('btn'),st=document.getElementById('status'),log=document.getElementById('log'),out=document.getElementById('out'),audioEl=document.getElementById('audio');
+let pc,dc,stream,transcript=[],active=false,ending=false;
+fetch('/health').then(r=>r.json()).then(h=>document.getElementById('meta').textContent=`modelo: ${h.model} | voz: ${h.voice}`);
+function line(role,text){const d=document.createElement('div');d.className=role==='user'?'u':'a';d.textContent=(role==='user'?'Cliente: ':'Alfa: ')+text;log.appendChild(d);log.scrollTop=log.scrollHeight;transcript.push({role,text});}
+btn.onclick=()=>active?stop():start();
+async function start(){
+  btn.disabled=true;st.textContent='A ligar…';transcript=[];log.innerHTML='';out.textContent='(aparece quando a chamada terminar)';ending=false;
+  const s=await (await fetch('/api/session',{method:'POST'})).json();
+  if(!s.client_secret){st.textContent='Erro: '+JSON.stringify(s);btn.disabled=false;return;}
+  pc=new RTCPeerConnection();
+  pc.ontrack=e=>{audioEl.srcObject=e.streams[0];};
+  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+  pc.addTrack(stream.getTracks()[0],stream);
+  dc=pc.createDataChannel('oai-events');
+  dc.onopen=()=>{ // pedir a primeira fala da Alfa
+    dc.send(JSON.stringify({type:'response.create',response:{instructions:'Diz agora a tua frase de abertura, exatamente como definida.'}}));
+  };
+  dc.onmessage=e=>{
+    const ev=JSON.parse(e.data);
+    if(ev.type==='conversation.item.input_audio_transcription.completed'&&ev.transcript) line('user',ev.transcript.trim());
+    if(ev.type==='response.output_audio_transcript.done'&&ev.transcript) line('assistant',ev.transcript.trim());
+    if(ev.type==='response.function_call_arguments.done'&&ev.name==='end_call'){
+      dc.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:ev.call_id,output:'{"ok":true}'}}));
+      ending=true;st.textContent='A Alfa terminou a chamada.';setTimeout(stop,2500);
+    }
+    if(ev.type==='error'){st.textContent='Erro: '+(ev.error?.message||'');}
+  };
+  const offer=await pc.createOffer();await pc.setLocalDescription(offer);
+  const r=await fetch(`${s.base}/v1/realtime/calls`,{method:'POST',headers:{Authorization:`Bearer ${s.client_secret}`,'Content-Type':'application/sdp'},body:offer.sdp});
+  if(!r.ok){st.textContent='Erro ao ligar: '+await r.text();btn.disabled=false;return;}
+  await pc.setRemoteDescription({type:'answer',sdp:await r.text()});
+  active=true;btn.disabled=false;btn.textContent='Terminar chamada';btn.className='stop';st.textContent='Em chamada. Fale normalmente.';
+}
+async function stop(){
+  if(!active)return;active=false;
+  try{dc&&dc.close();pc&&pc.close();stream&&stream.getTracks().forEach(t=>t.stop());}catch(_){}
+  btn.textContent='Iniciar chamada';btn.className='';st.textContent='Chamada terminada. A extrair resumo…';
+  if(transcript.length){
+    const r=await (await fetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript})})).json();
+    out.textContent=JSON.stringify(r.resultado||r,null,2);st.textContent='Pronto.';
+  } else st.textContent='Pronto (sem transcrição).';
+}
+</script></body></html>
