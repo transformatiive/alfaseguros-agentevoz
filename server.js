@@ -72,7 +72,7 @@ app.post("/api/session", async (req, res) => {
     const r = await fetch(`${OPENAI_BASE}/v1/realtime/client_secrets`, {
       method: "POST",
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ expires_after: { anchor: "created_at", seconds: 600 }, ...sessionConfig() })
+      body: JSON.stringify({ expires_after: { anchor: "created_at", seconds: 3600 }, ...sessionConfig() })
     });
     const data = await r.json();
     if (!r.ok) return res.status(r.status).json(data);
