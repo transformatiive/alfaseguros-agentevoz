@@ -18,7 +18,10 @@ const TEXT_MODEL = process.env.TEXT_MODEL || "gpt-5.4-mini";
 const PROMPT = fs.readFileSync(path.join(__dirname, "prompt_alfa.md"), "utf8");
 const FIRST_MESSAGE = "Olá, fala a Alfa, assistente virtual da Alfaseguros. Os nossos assistentes não conseguiram atender neste momento. Posso registar o seu pedido para que um colega o contacte. Esta chamada é gravada. Em que posso ajudar?";
 
-const INSTRUCTIONS = PROMPT + `
+const INSTRUCTIONS = `# Voz e sotaque (prioridade máxima)
+Falas exclusivamente em português europeu (de Portugal), com sotaque, pronúncia e entoação de Portugal (padrão de Lisboa). NUNCA uses sotaque, entoação, vocabulário ou construções do português do Brasil, em nenhuma circunstância e em nenhuma palavra. Usa sempre a fonética europeia: vogais átonas fechadas ou reduzidas, "e" final mudo, e a construção "estar a + infinitivo". Se notares que a tua pronúncia derivou para o português do Brasil, corrige imediatamente e mantém o sotaque europeu até ao fim da chamada.
+
+` + PROMPT + `
 # Início da chamada
 A tua primeira fala é exatamente: "${FIRST_MESSAGE}"
 
@@ -60,7 +63,7 @@ app.post("/api/session", async (req, res) => {
     });
     const data = await r.json();
     if (!r.ok) return res.status(r.status).json(data);
-    res.json({ client_secret: data.value, model: REALTIME_MODEL, voice: VOICE, base: OPENAI_BASE });
+    res.json({ client_secret: data.value, model: REALTIME_MODEL, voice: VOICE, base: OPENAI_BASE, first_message: FIRST_MESSAGE });
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
