@@ -126,6 +126,10 @@ async function ligar(retoma){
     const ev=JSON.parse(e.data);
     if(ev.type==='conversation.item.input_audio_transcription.completed'&&ev.transcript) linha('user',ev.transcript.trim());
     if(ev.type==='response.output_audio_transcript.done'&&ev.transcript) linha('assistant',ev.transcript.trim());
+    if(ev.type==='response.done'&&active&&dc.readyState==='open'){ // reforço invisível em cada interação
+      dc.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:'system',content:[{type:'input_text',
+        text:'Lembra-te: falas SEMPRE em português europeu de Portugal, com sotaque de Lisboa — nunca brasileiro ("registei", nunca "registrei"). Tratas o cliente de forma neutra quanto ao género (sem "o senhor"/"a senhora", cortesia só com o verbo). Uma pergunta de cada vez; depois de pedires confirmação, calas-te e esperas pela resposta.'}]}}));
+    }
     if(ev.type==='response.function_call_arguments.done'&&ev.name==='end_call'){
       dc.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:ev.call_id,output:'{"ok":true}'}}));
       st.textContent='A Alfa terminou a chamada.';setTimeout(stop,2500);
