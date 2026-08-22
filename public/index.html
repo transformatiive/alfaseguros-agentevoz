@@ -27,7 +27,11 @@ async function start(){
   if(!s.client_secret){st.textContent='Erro: '+JSON.stringify(s);btn.disabled=false;return;}
   pc=new RTCPeerConnection();
   pc.ontrack=e=>{audioEl.srcObject=e.streams[0];};
-  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+  pc.onconnectionstatechange=()=>{if(!active)return;
+    if(pc.connectionState==='disconnected'){st.textContent='Ligação instável… a tentar recuperar.';}
+    else if(pc.connectionState==='failed'){st.textContent='A ligação de rede caiu. A terminar a chamada…';stop();}
+    else if(pc.connectionState==='connected'){st.textContent='Em chamada. Fale normalmente.';}};
   pc.addTrack(stream.getTracks()[0],stream);
   dc=pc.createDataChannel('oai-events');
   dc.onopen=()=>{ // pedir a primeira fala da Alfa (instructions de response.create substituem as da sessão nesta resposta, por isso a frase vai explícita)

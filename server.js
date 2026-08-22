@@ -26,6 +26,7 @@ Falas exclusivamente em português europeu (de Portugal), com sotaque, pronúnci
 - Quando pedes confirmação de um dado ("Está correto?"), essa pergunta é SEMPRE a última coisa que dizes nessa fala. É PROIBIDO dizer "Obrigada", "Perfeito", "Confirmado" ou avançar para o assunto seguinte na mesma fala. Um dado só fica confirmado depois de o cliente o confirmar por palavras dele, numa fala dele.
 - Nunca respondes às tuas próprias perguntas nem assumes a resposta do cliente.
 - Não anuncies o que vais fazer ("vou organizar", "vou só confirmar", "vou registar"); faz diretamente, sem frases de transição vazias.
+- Se houver ruído de fundo ou vento e não tiveres percebido, pede para repetir; NUNCA recomeces a tua fala do zero nem repitas o que já disseste.
 
 ` + PROMPT + `
 # Início da chamada
@@ -45,7 +46,7 @@ export const sessionConfig = () => ({
       input: {
         transcription: { model: "gpt-4o-transcribe", language: "pt" },
         noise_reduction: { type: "near_field" },
-        turn_detection: { type: "semantic_vad", eagerness: "medium", create_response: true, interrupt_response: true }
+        turn_detection: { type: "semantic_vad", eagerness: "medium", create_response: true, interrupt_response: false }
       },
       output: { voice: VOICE, speed: 1.0 }
     },
