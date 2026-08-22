@@ -47,7 +47,9 @@ A tua primeira fala é exatamente: "${FIRST_MESSAGE}"
 Só podes chamar a ferramenta end_call DEPOIS de cumprir os três passos: (a) confirmaste o pedido com o cliente e ele disse que está correto, (b) disseste a frase de fecho completa, (c) o cliente se despediu ou ficou em silêncio. Nunca termines a chamada antes da confirmação.
 `;
 
-export const sessionConfig = () => ({
+const VOICES = ["marin", "cedar", "coral", "sage", "shimmer", "alloy", "ash", "ballad", "echo", "verse"];
+
+export const sessionConfig = (voice = VOICE) => ({
   session: {
     type: "realtime",
     model: REALTIME_MODEL,
@@ -59,7 +61,7 @@ export const sessionConfig = () => ({
         noise_reduction: { type: "near_field" },
         turn_detection: { type: "semantic_vad", eagerness: "medium", create_response: true, interrupt_response: true }
       },
-      output: { voice: VOICE, speed: 1.0 }
+      output: { voice, speed: 1.0 }
     },
     tools: [{
       type: "function",
@@ -74,14 +76,15 @@ export const sessionConfig = () => ({
 
 app.post("/api/session", async (req, res) => {
   try {
+    const voice = VOICES.includes(req.body?.voice) ? req.body.voice : VOICE; // override de teste via ?voz= na página
     const r = await fetch(`${OPENAI_BASE}/v1/realtime/client_secrets`, {
       method: "POST",
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ expires_after: { anchor: "created_at", seconds: 3600 }, ...sessionConfig() })
+      body: JSON.stringify({ expires_after: { anchor: "created_at", seconds: 3600 }, ...sessionConfig(voice) })
     });
     const data = await r.json();
     if (!r.ok) return res.status(r.status).json(data);
-    res.json({ client_secret: data.value, model: REALTIME_MODEL, voice: VOICE, base: OPENAI_BASE, first_message: FIRST_MESSAGE });
+    res.json({ client_secret: data.value, model: REALTIME_MODEL, voice, base: OPENAI_BASE, first_message: FIRST_MESSAGE });
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 

@@ -98,8 +98,9 @@ function linha(role,text){
 }
 btn.onclick=()=>active?stop():start();
 async function manterEcra(){try{wake&&await wake.release();}catch(_){} try{wake=await navigator.wakeLock.request('screen');}catch(_){}}
+const vozTeste=new URLSearchParams(location.search).get('voz');
 async function ligar(retoma){
-  const s=await (await fetch('/api/session',{method:'POST'})).json();
+  const s=await (await fetch('/api/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(vozTeste?{voice:vozTeste}:{})})).json();
   if(!s.client_secret) throw new Error('sem sessão');
   pc=new RTCPeerConnection();
   pc.ontrack=e=>{audioEl.srcObject=e.streams[0];audioEl.play().catch(()=>{});};
