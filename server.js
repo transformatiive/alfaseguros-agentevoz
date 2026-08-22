@@ -15,6 +15,7 @@ const OPENAI_BASE = process.env.OPENAI_BASE || "https://api.openai.com"; // usar
 const REALTIME_MODEL = process.env.REALTIME_MODEL || "gpt-realtime-2.1";
 const VOICE = process.env.VOICE || "marin";
 const TEXT_MODEL = process.env.TEXT_MODEL || "gpt-5.4-mini";
+const RESULT_WEBHOOK = process.env.RESULT_WEBHOOK || "https://trnsf.up.railway.app/webhook/alfa-voz-resultado"; // n8n: envia o resultado por email; vazio ("") desativa
 const PROMPT = fs.readFileSync(path.join(__dirname, "prompt_alfa.md"), "utf8");
 const FIRST_MESSAGE = "Olá, fala a Alfa, assistente virtual da Alfaseguros. Os nossos assistentes não conseguiram atender neste momento. Posso registar o seu pedido para que um colega o contacte. Esta chamada é gravada. Em que posso ajudar?";
 
@@ -109,7 +110,15 @@ app.post("/api/extract", async (req, res) => {
     const data = await r.json();
     if (!r.ok) return res.status(r.status).json(data);
     const txt = data.output?.flatMap(o => o.content || []).find(c => c.type === "output_text")?.text || "{}";
-    res.json({ resultado: JSON.parse(txt), transcript });
+    const resultado = JSON.parse(txt);
+    if (RESULT_WEBHOOK) {
+      fetch(RESULT_WEBHOOK, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resultado, transcript, data: new Date().toISOString(), origem: "alfa-voz-web" })
+      }).catch(() => {});
+    }
+    res.json({ resultado, transcript });
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
