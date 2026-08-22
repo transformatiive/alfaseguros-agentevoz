@@ -30,8 +30,8 @@ async function start(){
   stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
   pc.addTrack(stream.getTracks()[0],stream);
   dc=pc.createDataChannel('oai-events');
-  dc.onopen=()=>{ // pedir a primeira fala da Alfa
-    dc.send(JSON.stringify({type:'response.create',response:{instructions:'Diz agora a tua frase de abertura, exatamente como definida.'}}));
+  dc.onopen=()=>{ // pedir a primeira fala da Alfa (instructions de response.create substituem as da sessão nesta resposta, por isso a frase vai explícita)
+    dc.send(JSON.stringify({type:'response.create',response:{instructions:'Fala em português europeu de Portugal, com sotaque europeu (nunca brasileiro). A tua primeira fala é exatamente, palavra por palavra: "'+s.first_message+'"'}}));
   };
   dc.onmessage=e=>{
     const ev=JSON.parse(e.data);
