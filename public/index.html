@@ -23,7 +23,11 @@ header img{height:44px;width:auto}
 header small{font-weight:600;letter-spacing:.14em;text-transform:uppercase;font-size:.62rem;color:var(--bordeaux)}
 h1{font-size:clamp(1.5rem,5.5vw,2.1rem);font-weight:800;line-height:1.15;text-align:center;margin:1.8rem 0 .5rem}
 h1 em{font-style:normal;color:var(--laranja)}
-.sub{text-align:center;color:#6b6f76;font-size:.95rem;line-height:1.55;max-width:34ch;margin:0 0 1.6rem}
+.sub{text-align:center;color:#6b6f76;font-size:.95rem;line-height:1.55;max-width:34ch;margin:0 0 1.1rem}
+.vers{display:flex;gap:.3rem;background:var(--branco);border:1px solid #f2e4d6;border-radius:999px;padding:.25rem;margin-bottom:1.2rem}
+.vers button{border:0;background:transparent;border-radius:999px;padding:.45rem 1.2rem;font-family:inherit;font-weight:700;font-size:.8rem;color:#6b6f76;cursor:pointer;transition:background .2s,color .2s}
+.vers button.sel{background:var(--laranja);color:#fff}
+.vers.trancado{opacity:.55;pointer-events:none}
 .dial{position:relative;width:112px;height:112px;margin:.4rem 0 .8rem}
 .dial button{position:relative;z-index:2;width:112px;height:112px;border:0;border-radius:50%;cursor:pointer;
   background:linear-gradient(145deg,var(--laranja-vivo),var(--laranja) 55%,#e06a12);
@@ -66,6 +70,10 @@ footer a{color:var(--bordeaux);font-weight:600;text-decoration:none}
   </header>
   <h1>Fale com a <em>Alfa</em></h1>
   <p class="sub">A Alfa regista o seu pedido e um assistente da Alfaseguros liga-lhe de volta até ao próximo dia útil.</p>
+  <div class="vers" id="vers">
+    <button class="sel" data-p="openai">Versão A</button>
+    <button data-p="grok">Versão B</button>
+  </div>
   <div class="dial" id="dial">
     <span class="anel"></span><span class="anel"></span>
     <button id="btn" aria-label="Iniciar chamada">
@@ -85,26 +93,80 @@ footer a{color:var(--bordeaux);font-weight:600;text-decoration:none}
 <script>
 const btn=document.getElementById('btn'),dial=document.getElementById('dial'),st=document.getElementById('status'),
 conversa=document.getElementById('conversa'),registo=document.getElementById('registo'),campos=document.getElementById('campos'),
-aguarde=document.getElementById('aguarde'),audioEl=document.getElementById('audio');
-let pc,dc,stream,transcript=[],active=false,reconnects=0,wake,discoTimer;
+aguarde=document.getElementById('aguarde'),audioEl=document.getElementById('audio'),vers=document.getElementById('vers');
+let pc,dc,ws,stream,actx,micSrc,micProc,transcript=[],active=false,reconnects=0,wake,discoTimer,provider='openai',playT=0,playSources=[],userLines={};
+const vozTeste=new URLSearchParams(location.search).get('voz');
 const CAT={SIMULACAO:'Simulação',GESTAO_APOLICE:'Gestão de apólice',SINISTRO:'Sinistro',CANCELAMENTO:'Cancelamento',PEDIDO_SEM_RESPOSTA:'Pedido sem resposta',OUTRO:'Outro'};
 const PROD={AUTOMOVEL:'Automóvel',MULTIRRISCOS_HABITACAO:'Multirriscos Habitação',MULTIRRISCOS_CONDOMINIO:'Multirriscos Condomínio',MULTIRRISCOS_EMPRESARIAL:'Multirriscos Empresarial',SAUDE:'Saúde',TVDE:'TVDE',ACIDENTES_TRABALHO_INDIVIDUAL:'Acidentes de Trabalho — Individual',ACIDENTES_TRABALHO_COLETIVO:'Acidentes de Trabalho — Coletivo',RC_GERAL:'Responsabilidade Civil Geral',RC_CONSTRUCAO:'RC Construção',RC_EMPRESARIAL:'RC Empresarial',RC_MEDICOS:'RC Médicos',RC_ARMAS_CACADOR:'RC Armas / Caçador',OBRAS_MONTAGENS:'Obras e Montagens',ANIMAIS:'Animais de Companhia',BICICLETAS_TROTINETAS:'Bicicletas e Trotinetas',VIAGEM:'Viagem',EMBARCACAO:'Embarcação',ACIDENTES_PESSOAIS:'Acidentes Pessoais'};
-function linha(role,text){
+const LEMBRETE='Lembra-te: falas SEMPRE em português europeu de Portugal, com sotaque de Lisboa — nunca brasileiro ("registei", nunca "registrei"). Tratas o cliente de forma neutra quanto ao género (sem "o senhor"/"a senhora", cortesia só com o verbo). Uma pergunta de cada vez; depois de pedires confirmação, calas-te e esperas pela resposta.';
+vers.querySelectorAll('button').forEach(b=>b.onclick=()=>{if(active)return;provider=b.dataset.p;vers.querySelectorAll('button').forEach(x=>x.classList.toggle('sel',x===b));});
+function novaLinha(role,text){
   const d=document.createElement('div');d.className='msg '+(role==='user'?'cli':'alfa');
   d.innerHTML=(role==='user'?'':'<span class="av">A</span>')+'<p></p>';
   d.querySelector('p').textContent=text;
   conversa.style.display='flex';conversa.appendChild(d);conversa.scrollTop=conversa.scrollHeight;
-  transcript.push({role,text});
+  return d;
 }
-btn.onclick=()=>active?stop():start();
+function linha(role,text){novaLinha(role,text);transcript.push({role,text});}
+function linhaUser(id,text){ // transcrição cumulativa (xAI envia .updated); atualiza a mesma linha
+  if(!id){linha('user',text);return;}
+  const u=userLines[id];
+  if(u){u.el.querySelector('p').textContent=text;transcript[u.i].text=text;}
+  else{const el=novaLinha('user',text);userLines[id]={el,i:transcript.push({role:'user',text})-1};}
+  conversa.scrollTop=conversa.scrollHeight;
+}
+function sendEvent(o){const j=JSON.stringify(o);
+  if(provider==='grok'){if(ws&&ws.readyState===1)ws.send(j);}
+  else{if(dc&&dc.readyState==='open')dc.send(j);}}
+function b64ToF32(b64){const bin=atob(b64),n=bin.length>>1,u8=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);
+  const dv=new DataView(u8.buffer),f=new Float32Array(n);
+  for(let i=0;i<n;i++)f[i]=dv.getInt16(i*2,true)/32768;return f;}
+function f32ToB64(f){const dv=new DataView(new ArrayBuffer(f.length*2));
+  for(let i=0;i<f.length;i++){const s=Math.max(-1,Math.min(1,f[i]));dv.setInt16(i*2,s<0?s*32768:s*32767,true);}
+  const u8=new Uint8Array(dv.buffer);let bin='';
+  for(let i=0;i<u8.length;i+=8192)bin+=String.fromCharCode.apply(null,u8.subarray(i,i+8192));
+  return btoa(bin);}
+function resample(f,from,to){if(from===to)return f;
+  const r=from/to,n=Math.floor(f.length/r),out=new Float32Array(n);
+  for(let i=0;i<n;i++){const x=i*r,i0=Math.floor(x),i1=Math.min(i0+1,f.length-1);out[i]=f[i0]+(f[i1]-f[i0])*(x-i0);}
+  return out;}
+function playDelta(b64){const f=b64ToF32(b64);if(!f.length||!actx)return;
+  const buf=actx.createBuffer(1,f.length,24000);buf.getChannelData(0).set(f);
+  const src=actx.createBufferSource();src.buffer=buf;src.connect(actx.destination);
+  const t=Math.max(actx.currentTime+0.06,playT);src.start(t);playT=t+buf.duration;
+  playSources.push(src);src.onended=()=>{const i=playSources.indexOf(src);if(i>=0)playSources.splice(i,1);};}
+function stopPlayback(){playSources.forEach(s=>{try{s.stop()}catch(_){}});playSources=[];playT=0;}
+function handleEvent(ev){
+  if(ev.type==='conversation.item.input_audio_transcription.completed'&&ev.transcript) linhaUser(ev.item_id,ev.transcript.trim());
+  if(ev.type==='conversation.item.input_audio_transcription.updated'&&ev.transcript) linhaUser(ev.item_id,ev.transcript.trim());
+  if((ev.type==='response.output_audio_transcript.done'||ev.type==='response.audio_transcript.done')&&ev.transcript) linha('assistant',ev.transcript.trim());
+  if((ev.type==='response.output_audio.delta'||ev.type==='response.audio.delta')&&ev.delta&&provider==='grok') playDelta(ev.delta);
+  if(ev.type==='input_audio_buffer.speech_started'&&provider==='grok') stopPlayback();
+  if(ev.type==='response.done'&&active){ // reforço invisível em cada interação
+    sendEvent({type:'conversation.item.create',item:{type:'message',role:'system',content:[{type:'input_text',text:LEMBRETE}]}});
+  }
+  if(ev.type==='response.function_call_arguments.done'&&ev.name==='end_call'){
+    sendEvent({type:'conversation.item.create',item:{type:'function_call_output',call_id:ev.call_id,output:'{"ok":true}'}});
+    st.textContent='A Alfa terminou a chamada.';setTimeout(stop,2500);
+  }
+  if(ev.type==='error'){st.textContent='Ocorreu um problema na chamada.';}
+}
 async function manterEcra(){try{wake&&await wake.release();}catch(_){} try{wake=await navigator.wakeLock.request('screen');}catch(_){}}
-const vozTeste=new URLSearchParams(location.search).get('voz');
-async function ligar(retoma){
-  const s=await (await fetch('/api/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(vozTeste?{voice:vozTeste}:{})})).json();
-  if(!s.client_secret) throw new Error('sem sessão');
+function replayOuAbertura(s,retoma){
+  if(retoma&&transcript.length){
+    for(const t of transcript){
+      sendEvent({type:'conversation.item.create',item:{type:'message',role:t.role==='user'?'user':'assistant',
+        content:[t.role==='user'?{type:'input_text',text:t.text}:{type:'text',text:t.text}]}});
+    }
+    sendEvent({type:'response.create',response:{instructions:'Fala em português europeu de Portugal, com sotaque europeu. A ligação caiu por instantes e foi retomada; a conversa anterior está acima. Continua exatamente de onde estava, sem cumprimentar de novo e sem repetir o que já foi dito. Se estavas à espera de um dado do cliente, repete apenas essa pergunta, numa frase curta.'}});
+  } else {
+    sendEvent({type:'response.create',response:{instructions:'Fala em português europeu de Portugal, com sotaque europeu (nunca brasileiro). A tua primeira fala é exatamente, palavra por palavra: "'+s.first_message+'"'}});
+  }
+}
+async function ligarOpenAI(s,retoma){
   pc=new RTCPeerConnection();
   pc.ontrack=e=>{audioEl.srcObject=e.streams[0];audioEl.play().catch(()=>{});};
-  if(!stream) stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
   pc.addTrack(stream.getTracks()[0],stream);
   pc.onconnectionstatechange=()=>{if(!active)return;const cs=pc.connectionState;
     if(cs==='connected'){clearTimeout(discoTimer);st.textContent='Em chamada. Fale normalmente.';}
@@ -112,63 +174,87 @@ async function ligar(retoma){
       discoTimer=setTimeout(()=>{if(active&&pc.connectionState!=='connected')retomar();},4000);}
     else if(cs==='failed'){retomar();}};
   dc=pc.createDataChannel('oai-events');
-  dc.onopen=()=>{ // instructions de response.create substituem as da sessão nesta resposta, por isso vão explícitas
-    if(retoma&&transcript.length){
-      for(const t of transcript){
-        dc.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:t.role==='user'?'user':'assistant',
-          content:[t.role==='user'?{type:'input_text',text:t.text}:{type:'text',text:t.text}]}}));
-      }
-      dc.send(JSON.stringify({type:'response.create',response:{instructions:'Fala em português europeu de Portugal, com sotaque europeu. A ligação caiu por instantes e foi retomada; a conversa anterior está acima. Continua exatamente de onde estava, sem cumprimentar de novo e sem repetir o que já foi dito. Se estavas à espera de um dado do cliente, repete apenas essa pergunta, numa frase curta.'}}));
-    } else {
-      dc.send(JSON.stringify({type:'response.create',response:{instructions:'Fala em português europeu de Portugal, com sotaque europeu (nunca brasileiro). A tua primeira fala é exatamente, palavra por palavra: "'+s.first_message+'"'}}));
-    }
-  };
-  dc.onmessage=e=>{
-    const ev=JSON.parse(e.data);
-    if(ev.type==='conversation.item.input_audio_transcription.completed'&&ev.transcript) linha('user',ev.transcript.trim());
-    if(ev.type==='response.output_audio_transcript.done'&&ev.transcript) linha('assistant',ev.transcript.trim());
-    if(ev.type==='response.done'&&active&&dc.readyState==='open'){ // reforço invisível em cada interação
-      dc.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:'system',content:[{type:'input_text',
-        text:'Lembra-te: falas SEMPRE em português europeu de Portugal, com sotaque de Lisboa — nunca brasileiro ("registei", nunca "registrei"). Tratas o cliente de forma neutra quanto ao género (sem "o senhor"/"a senhora", cortesia só com o verbo). Uma pergunta de cada vez; depois de pedires confirmação, calas-te e esperas pela resposta.'}]}}));
-    }
-    if(ev.type==='response.function_call_arguments.done'&&ev.name==='end_call'){
-      dc.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:ev.call_id,output:'{"ok":true}'}}));
-      st.textContent='A Alfa terminou a chamada.';setTimeout(stop,2500);
-    }
-    if(ev.type==='error'){st.textContent='Ocorreu um problema na chamada.';}
-  };
+  dc.onopen=()=>replayOuAbertura(s,retoma); // instructions de response.create substituem as da sessão nesta resposta
+  dc.onmessage=e=>handleEvent(JSON.parse(e.data));
   const offer=await pc.createOffer();await pc.setLocalDescription(offer);
   const r=await fetch(`${s.base}/v1/realtime/calls`,{method:'POST',headers:{Authorization:`Bearer ${s.client_secret}`,'Content-Type':'application/sdp'},body:offer.sdp});
   if(!r.ok) throw new Error('ligação recusada');
   await pc.setRemoteDescription({type:'answer',sdp:await r.text()});
 }
+async function ligarGrok(s,retoma){
+  actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+  await actx.resume();playT=0;
+  await new Promise((ok,ko)=>{
+    ws=new WebSocket(s.ws_url,['xai-client-secret.'+s.client_secret]);
+    ws.onopen=()=>{
+      ws.send(JSON.stringify({type:'session.update',session:{
+        instructions:s.instructions,voice:s.voice,
+        turn_detection:{type:'server_vad'},
+        audio:{input:{transcription:{language_hint:'pt-PT'}}},
+        tools:[{type:'function',name:'end_call',description:'Termina a chamada. Usar APENAS depois de o cliente confirmar o resumo e de o agente dizer a frase de fecho completa.',parameters:{type:'object',properties:{},additionalProperties:false}}],
+        tool_choice:'auto'
+      }}));
+      replayOuAbertura(s,retoma);
+      micSrc=actx.createMediaStreamSource(stream);
+      micProc=actx.createScriptProcessor(4096,1,1);
+      micProc.onaudioprocess=e=>{if(ws&&ws.readyState===1){
+        const f=resample(e.inputBuffer.getChannelData(0),actx.sampleRate,24000);
+        ws.send(JSON.stringify({type:'input_audio_buffer.append',audio:f32ToB64(f)}));}};
+      const mute=actx.createGain();mute.gain.value=0;
+      micSrc.connect(micProc);micProc.connect(mute);mute.connect(actx.destination);
+      ok();
+    };
+    ws.onerror=()=>ko(new Error('ws'));
+    ws.onmessage=e=>handleEvent(JSON.parse(e.data));
+    ws.onclose=()=>{if(active){clearTimeout(discoTimer);discoTimer=setTimeout(()=>{if(active)retomar();},1200);}};
+  });
+}
+async function ligar(retoma){
+  const s=await (await fetch('/api/session',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(Object.assign({provider},vozTeste?{voice:vozTeste}:{}))})).json();
+  if(!s.client_secret) throw new Error('sem sessão');
+  if(!stream) stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+  if(s.provider==='grok') await ligarGrok(s,retoma); else await ligarOpenAI(s,retoma);
+}
+btn.onclick=()=>active?stop():start();
 async function start(){
-  btn.disabled=true;st.textContent='A ligar…';transcript=[];reconnects=0;conversa.innerHTML='';conversa.style.display='none';registo.style.display='none';
+  btn.disabled=true;st.textContent='A ligar…';transcript=[];userLines={};reconnects=0;
+  conversa.innerHTML='';conversa.style.display='none';registo.style.display='none';
   try{
     await ligar(false);
-    active=true;btn.disabled=false;dial.classList.add('on');btn.setAttribute('aria-label','Terminar chamada');st.textContent='Em chamada. Fale normalmente.';
+    active=true;btn.disabled=false;dial.classList.add('on');vers.classList.add('trancado');
+    btn.setAttribute('aria-label','Terminar chamada');st.textContent='Em chamada. Fale normalmente.';
     manterEcra();
   }catch(_){st.textContent='Não foi possível ligar. Verifique o microfone e tente novamente.';btn.disabled=false;}
+}
+function desligarTransporte(){
+  try{dc&&dc.close();pc&&pc.close();}catch(_){}
+  try{if(ws){ws.onclose=null;ws.close();}}catch(_){}
+  try{micProc&&micProc.disconnect();micSrc&&micSrc.disconnect();}catch(_){}
+  stopPlayback();
 }
 async function retomar(){
   if(!active)return;
   if(reconnects>=2){st.textContent='A ligação caiu. A guardar o que foi dito…';stop();return;}
   reconnects++;st.textContent='A retomar a chamada…';clearTimeout(discoTimer);
-  try{dc&&dc.close();pc&&pc.close();}catch(_){}
-  try{await ligar(true);}catch(_){st.textContent='Não foi possível retomar. A guardar o que foi dito…';stop();}
+  desligarTransporte();
+  try{await ligar(true);st.textContent='Em chamada. Fale normalmente.';}
+  catch(_){st.textContent='Não foi possível retomar. A guardar o que foi dito…';stop();}
 }
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'&&active){
-    manterEcra();audioEl.play().catch(()=>{});
-    if(pc&&pc.connectionState!=='connected')retomar();
+    manterEcra();audioEl.play().catch(()=>{});actx&&actx.resume();
+    const morto=provider==='grok'?(!ws||ws.readyState!==1):(pc&&pc.connectionState!=='connected');
+    if(morto)retomar();
   }
 });
 async function stop(){
   if(!active)return;active=false;clearTimeout(discoTimer);
   try{wake&&wake.release();}catch(_){}wake=null;
-  try{dc&&dc.close();pc&&pc.close();stream&&stream.getTracks().forEach(t=>t.stop());}catch(_){}
+  desligarTransporte();
+  try{stream&&stream.getTracks().forEach(t=>t.stop());}catch(_){}
   stream=null;
-  dial.classList.remove('on');btn.setAttribute('aria-label','Iniciar chamada');
+  dial.classList.remove('on');vers.classList.remove('trancado');btn.setAttribute('aria-label','Iniciar chamada');
   if(transcript.length){
     st.textContent='';aguarde.style.display='flex';
     let r={};try{r=await (await fetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript})})).json();}catch(_){}

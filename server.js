@@ -16,6 +16,10 @@ const REALTIME_MODEL = process.env.REALTIME_MODEL || "gpt-realtime-2.1";
 const VOICE = process.env.VOICE || "marin";
 const TEXT_MODEL = process.env.TEXT_MODEL || "gpt-5.4-mini";
 const RESULT_WEBHOOK = process.env.RESULT_WEBHOOK || "https://trnsf.up.railway.app/webhook/alfa-voz-resultado"; // n8n: envia o resultado por email; vazio ("") desativa
+const XAI_API_KEY = process.env.XAI_API_KEY;
+const XAI_BASE = process.env.XAI_BASE || "https://api.x.ai";
+const GROK_MODEL = process.env.GROK_MODEL || "grok-voice-latest";
+const GROK_VOICE = process.env.GROK_VOICE || "eve";
 const PROMPT = fs.readFileSync(path.join(__dirname, "prompt_alfa.md"), "utf8");
 const FIRST_MESSAGE = "Olá, fala a Alfa, assistente virtual da Alfaseguros. Os nossos assistentes não conseguiram atender neste momento. Posso registar o seu pedido para que um colega o contacte. Esta chamada é gravada. Em que posso ajudar?";
 
@@ -76,6 +80,24 @@ export const sessionConfig = (voice = VOICE) => ({
 
 app.post("/api/session", async (req, res) => {
   try {
+    if (req.body?.provider === "grok") {
+      // xAI: o client secret não transporta configuração de sessão; o browser envia session.update depois de ligar.
+      if (!XAI_API_KEY) return res.status(503).json({ error: "grok indisponível" });
+      const voice = (typeof req.body?.voice === "string" && /^[a-z0-9_-]{1,32}$/i.test(req.body.voice)) ? req.body.voice : GROK_VOICE;
+      const r = await fetch(`${XAI_BASE}/v1/realtime/client_secrets`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${XAI_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ expires_after: { seconds: 600 } })
+      });
+      const data = await r.json();
+      if (!r.ok) return res.status(r.status).json(data);
+      const token = data.value || data.client_secret?.value || data.client_secret || data.token;
+      return res.json({
+        provider: "grok", client_secret: token, model: GROK_MODEL, voice,
+        ws_url: `${XAI_BASE.replace("https://", "wss://")}/v1/realtime?model=${encodeURIComponent(GROK_MODEL)}`,
+        instructions: INSTRUCTIONS, first_message: FIRST_MESSAGE
+      });
+    }
     const voice = VOICES.includes(req.body?.voice) ? req.body.voice : VOICE; // override de teste via ?voz= na página
     const r = await fetch(`${OPENAI_BASE}/v1/realtime/client_secrets`, {
       method: "POST",
@@ -84,7 +106,7 @@ app.post("/api/session", async (req, res) => {
     });
     const data = await r.json();
     if (!r.ok) return res.status(r.status).json(data);
-    res.json({ client_secret: data.value, model: REALTIME_MODEL, voice, base: OPENAI_BASE, first_message: FIRST_MESSAGE });
+    res.json({ provider: "openai", client_secret: data.value, model: REALTIME_MODEL, voice, base: OPENAI_BASE, first_message: FIRST_MESSAGE });
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
