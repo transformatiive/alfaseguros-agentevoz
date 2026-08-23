@@ -94,7 +94,7 @@ footer a{color:var(--bordeaux);font-weight:600;text-decoration:none}
 const btn=document.getElementById('btn'),dial=document.getElementById('dial'),st=document.getElementById('status'),
 conversa=document.getElementById('conversa'),registo=document.getElementById('registo'),campos=document.getElementById('campos'),
 aguarde=document.getElementById('aguarde'),audioEl=document.getElementById('audio'),vers=document.getElementById('vers');
-let pc,dc,ws,stream,actx,micSrc,micProc,transcript=[],active=false,reconnects=0,wake,discoTimer,provider='openai',playT=0,playSources=[],userLines={};
+let pc,dc,ws,stream,actx,micSrc,micProc,transcript=[],active=false,reconnects=0,wake,discoTimer,provider='openai',playT=0,playSources=[],userLines={},ending=false,endTimer,oaiAFalar=false;
 const vozTeste=new URLSearchParams(location.search).get('voz');
 const CAT={SIMULACAO:'Simulação',GESTAO_APOLICE:'Gestão de apólice',SINISTRO:'Sinistro',CANCELAMENTO:'Cancelamento',PEDIDO_SEM_RESPOSTA:'Pedido sem resposta',OUTRO:'Outro'};
 const PROD={AUTOMOVEL:'Automóvel',MULTIRRISCOS_HABITACAO:'Multirriscos Habitação',MULTIRRISCOS_CONDOMINIO:'Multirriscos Condomínio',MULTIRRISCOS_EMPRESARIAL:'Multirriscos Empresarial',SAUDE:'Saúde',TVDE:'TVDE',ACIDENTES_TRABALHO_INDIVIDUAL:'Acidentes de Trabalho — Individual',ACIDENTES_TRABALHO_COLETIVO:'Acidentes de Trabalho — Coletivo',RC_GERAL:'Responsabilidade Civil Geral',RC_CONSTRUCAO:'RC Construção',RC_EMPRESARIAL:'RC Empresarial',RC_MEDICOS:'RC Médicos',RC_ARMAS_CACADOR:'RC Armas / Caçador',OBRAS_MONTAGENS:'Obras e Montagens',ANIMAIS:'Animais de Companhia',BICICLETAS_TROTINETAS:'Bicicletas e Trotinetas',VIAGEM:'Viagem',EMBARCACAO:'Embarcação',ACIDENTES_PESSOAIS:'Acidentes Pessoais'};
@@ -137,19 +137,34 @@ function playDelta(b64){const f=b64ToF32(b64);if(!f.length||!actx)return;
   const t=Math.max(actx.currentTime+0.06,playT);src.start(t);playT=t+buf.duration;
   playSources.push(src);src.onended=()=>{const i=playSources.indexOf(src);if(i>=0)playSources.splice(i,1);};}
 function stopPlayback(){playSources.forEach(s=>{try{s.stop()}catch(_){}});playSources=[];playT=0;}
+function aguardarFimDoAudio(){ // espera a fila de reprodução esvaziar (600ms seguidos) antes de desligar
+  let vazio=0;
+  const iv=setInterval(()=>{
+    if(!active){clearInterval(iv);return;}
+    if(playSources.length===0){if(++vazio>=3){clearInterval(iv);clearTimeout(endTimer);setTimeout(stop,300);}}
+    else vazio=0;
+  },200);
+}
 function handleEvent(ev){
   if(ev.type==='conversation.item.input_audio_transcription.completed'&&ev.transcript) linhaUser(ev.item_id,ev.transcript.trim());
   if(ev.type==='conversation.item.input_audio_transcription.updated'&&ev.transcript) linhaUser(ev.item_id,ev.transcript.trim());
   if((ev.type==='response.output_audio_transcript.done'||ev.type==='response.audio_transcript.done')&&ev.transcript) linha('assistant',ev.transcript.trim());
   if((ev.type==='response.output_audio.delta'||ev.type==='response.audio.delta')&&ev.delta&&provider==='grok') playDelta(ev.delta);
   if(ev.type==='input_audio_buffer.speech_started'&&provider==='grok') stopPlayback();
-  if(ev.type==='response.done'&&active){ // reforço invisível em cada interação
+  if(ev.type==='response.done'&&active&&!ending){ // reforço invisível em cada interação
     sendEvent({type:'conversation.item.create',item:{type:'message',role:'system',content:[{type:'input_text',text:LEMBRETE}]}});
   }
   if(ev.type==='response.function_call_arguments.done'&&ev.name==='end_call'){
     sendEvent({type:'conversation.item.create',item:{type:'function_call_output',call_id:ev.call_id,output:'{"ok":true}'}});
-    st.textContent='A Alfa terminou a chamada.';setTimeout(stop,2500);
+    ending=true;st.textContent='A Alfa está a despedir-se…';
+    clearTimeout(endTimer);endTimer=setTimeout(stop,20000); // salvaguarda: nunca fica pendurado
+    if(provider==='grok'){setTimeout(aguardarFimDoAudio,1200);} // cobre despedida já dita antes do end_call
+    else{setTimeout(()=>{if(active&&ending&&!oaiAFalar)stop();},4000);}
   }
+  // terminar só depois de a Alfa acabar mesmo de falar
+  if(provider==='openai'&&ev.type==='output_audio_buffer.started'){oaiAFalar=true;}
+  if(provider==='openai'&&ev.type==='output_audio_buffer.stopped'){oaiAFalar=false;if(ending){clearTimeout(endTimer);setTimeout(stop,500);}}
+  if(ending&&provider==='grok'&&ev.type==='response.done'){aguardarFimDoAudio();}
   if(ev.type==='error'){st.textContent='Ocorreu um problema na chamada.';}
 }
 async function manterEcra(){try{wake&&await wake.release();}catch(_){} try{wake=await navigator.wakeLock.request('screen');}catch(_){}}
@@ -218,7 +233,7 @@ async function ligar(retoma){
 }
 btn.onclick=()=>active?stop():start();
 async function start(){
-  btn.disabled=true;st.textContent='A ligar…';transcript=[];userLines={};reconnects=0;
+  btn.disabled=true;st.textContent='A ligar…';transcript=[];userLines={};reconnects=0;ending=false;clearTimeout(endTimer);
   conversa.innerHTML='';conversa.style.display='none';registo.style.display='none';
   try{
     await ligar(false);
@@ -249,7 +264,7 @@ document.addEventListener('visibilitychange',()=>{
   }
 });
 async function stop(){
-  if(!active)return;active=false;clearTimeout(discoTimer);
+  if(!active)return;active=false;clearTimeout(discoTimer);clearTimeout(endTimer);ending=false;
   try{wake&&wake.release();}catch(_){}wake=null;
   desligarTransporte();
   try{stream&&stream.getTracks().forEach(t=>t.stop());}catch(_){}
