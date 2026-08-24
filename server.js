@@ -21,7 +21,7 @@ const XAI_BASE = process.env.XAI_BASE || "https://api.x.ai";
 const GROK_MODEL = process.env.GROK_MODEL || "grok-voice-latest";
 const GROK_VOICE = process.env.GROK_VOICE || "eve";
 const PROMPT = fs.readFileSync(path.join(__dirname, "prompt_alfa.md"), "utf8");
-const FIRST_MESSAGE = "Olá, fala a Alfa, assistente virtual da Alfaseguros. Os nossos assistentes não conseguiram atender neste momento. Posso registar o seu pedido para que um colega o contacte. Esta chamada é gravada. Em que posso ajudar?";
+const FIRST_MESSAGE = "Olá, fala a Alfa, assistente virtual da Alfaseguros. Os nossos consultores não conseguiram atender neste momento. Posso registar o seu pedido para que um consultor o contacte. Esta chamada é gravada. Em que posso ajudar?";
 
 const INSTRUCTIONS = `# Voz e sotaque (prioridade máxima)
 Falas exclusivamente em português europeu (de Portugal), com sotaque, pronúncia e entoação de Portugal (padrão de Lisboa). NUNCA uses sotaque, entoação, vocabulário ou construções do português do Brasil, em nenhuma circunstância e em nenhuma palavra. Usa sempre a fonética europeia: vogais átonas fechadas ou reduzidas, "e" final mudo, e a construção "estar a + infinitivo". Se notares que a tua pronúncia derivou para o português do Brasil, corrige imediatamente e mantém o sotaque europeu até ao fim da chamada. Formas verbais europeias sempre: "registei" (nunca "registrei"), "confirmei" (nunca com pronúncia brasileira).
@@ -145,7 +145,7 @@ app.post("/api/extract", async (req, res) => {
       fetch(RESULT_WEBHOOK, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resultado, transcript, diag: req.body.diag, data: new Date().toISOString(), origem: "alfa-voz-web" })
+        body: JSON.stringify({ resultado, transcript: req.body.transcript || [], diag: req.body.diag, data: new Date().toISOString(), origem: "alfa-voz-web" })
       }).catch(() => {});
     }
     res.json({ resultado, transcript });
