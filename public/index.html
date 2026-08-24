@@ -95,7 +95,7 @@ const btn=document.getElementById('btn'),dial=document.getElementById('dial'),st
 conversa=document.getElementById('conversa'),registo=document.getElementById('registo'),campos=document.getElementById('campos'),
 aguarde=document.getElementById('aguarde'),audioEl=document.getElementById('audio'),vers=document.getElementById('vers');
 let pc,dc,ws,stream,actx,micSrc,micProc,transcript=[],active=false,reconnects=0,wake,discoTimer,provider='openai',playT=0,playSources=[],userLines={},ending=false,endTimer,oaiAFalar=false,outGain,outDest,respAudioAtiva=false,diag={underruns:0,cortes:0,falsosVad:0,dobresResp:0},
-bufLead=0.45,lastAct=0,nudges=0,silTimer,arranque=null,arranqueTimer,respPend=0,updPend=0,vadDebounce=null,aguardaConfirmacao=false,micGateUntil=0,turno=null,userFalou=false;
+bufLead=0.45,lastAct=0,nudges=0,silTimer,arranque=null,arranqueTimer,respPend=0,updPend=0,vadDebounce=null,aguardaConfirmacao=false,micGateUntil=0,turno=null,userFalou=false,respPropria=false,destravas=0;
 const SILENCIO_MS=5000,SILENCIO_CONFIRMACAO_MS=12000,VAD_DEBOUNCE_MS=250,MIC_GATE_TAIL_MS=350;
 const vozTeste=new URLSearchParams(location.search).get('voz');
 const VOZES_A=['marin','cedar','coral','sage','shimmer','alloy','ash','ballad','echo','verse'];
@@ -164,6 +164,7 @@ function aguardarFimDoAudio(){ // espera a fila de reprodução esvaziar (600ms 
   },200);
 }
 function marcaAtividade(){lastAct=Date.now();}
+function pedeResposta(instr){respPropria=true;sendEvent({type:'response.create',response:{instructions:instr}});} // marcada: a guarda de fala dupla não a pode cancelar
 function handleEvent(ev){
   marcaAtividade();
   if(ev.type==='session.updated'&&arranque){if(updPend>0)updPend--;if(updPend===0){const f=arranque;arranque=null;clearTimeout(arranqueTimer);f();}}
@@ -173,10 +174,10 @@ function handleEvent(ev){
   if(ev.type==='conversation.item.input_audio_transcription.updated'&&ev.transcript){linhaUser(ev.item_id,ev.transcript.trim());nudges=0;aguardaConfirmacao=false;turno='user';}
   if(ev.type==='response.created'){
     respPend=0;
-    if(provider==='grok'&&turno==='assistant'&&!userFalou){ // 2.ª fala seguida sem o cliente
+    if(!respPropria&&provider==='grok'&&turno==='assistant'&&!userFalou){ // 2.ª fala seguida sem o cliente
       diag.dobresResp++;sendEvent({type:'response.cancel'});stopPlayback();return;
     }
-    userFalou=false;
+    respPropria=false;userFalou=false;destravas=0;
   }
   if((ev.type==='response.output_audio_transcript.done'||ev.type==='response.audio_transcript.done')&&ev.transcript){
     const txt=ev.transcript.trim();linha('assistant',txt);turno='assistant';
@@ -219,17 +220,22 @@ function vigiaSilencio(){ // 5s sem ninguém falar => a Alfa retoma; à 3ª vez 
     const limiteSilencio=aguardaConfirmacao?SILENCIO_CONFIRMACAO_MS:SILENCIO_MS;
     if(respPend&&turno==='user'&&Date.now()-respPend>4000){ // o cliente falou e não veio resposta: destrava (segmento preso no servidor)
       respPend=0;
-      sendEvent({type:'response.create',response:{instructions:PT_RESP+' Responde AGORA ao que o cliente acabou de dizer, no mesmo tom de voz. Se não percebeste, pede para repetir numa frase curta.'}});
+      pedeResposta(PT_RESP+' Responde AGORA ao que o cliente acabou de dizer, no mesmo tom de voz. Se não percebeste, pede para repetir numa frase curta.');
       return;
     }
     if(Date.now()-lastAct<=limiteSilencio)return;
-    if(turno!=='assistant')return; // só nudge se a Alfa falou por último e espera resposta
+    if(turno==='user'){ // o cliente falou por último e não veio resposta: segmento preso no servidor
+      if(destravas<3){destravas++;marcaAtividade();
+        pedeResposta(PT_RESP+' Responde AGORA ao que o cliente acabou de dizer, no mesmo tom de voz. Se não percebeste, pede para repetir numa frase curta.');
+        return;}
+      // três tentativas sem resposta: trata como silêncio (segue para o aviso/despedida)
+    }
     marcaAtividade();nudges++;
     if(nudges<=2){
-      sendEvent({type:'response.create',response:{instructions:PT_RESP+' O cliente está em silêncio há alguns segundos. Pergunta educadamente se ainda está aí e repete, numa frase curta, a última pergunta que tinhas feito. Nada mais.'}});
+      pedeResposta(PT_RESP+' O cliente está em silêncio há alguns segundos. Pergunta educadamente se ainda está aí e repete, numa frase curta, a última pergunta que tinhas feito. Nada mais.');
     } else {
       clearInterval(silTimer); // uma só despedida
-      sendEvent({type:'response.create',response:{instructions:PT_RESP+' O cliente não responde. Diz numa frase curta que o pedido fica registado com os dados já recolhidos e que um consultor entrará em contacto; despede-te e chama a ferramenta end_call.'}});
+      pedeResposta(PT_RESP+' O cliente não responde. Diz numa frase curta que o pedido fica registado com os dados já recolhidos e que um consultor entrará em contacto; despede-te e chama a ferramenta end_call.');
       setTimeout(()=>{if(active&&!ending)stop();},12000);
     }
   },1000);
@@ -240,9 +246,9 @@ function replayOuAbertura(s,retoma){
       sendEvent({type:'conversation.item.create',item:{type:'message',role:t.role==='user'?'user':'assistant',
         content:[t.role==='user'?{type:'input_text',text:t.text}:{type:'text',text:t.text}]}});
     }
-    sendEvent({type:'response.create',response:{instructions:PT_RESP+' A ligação caiu por instantes e foi retomada; a conversa anterior está acima. Continua exatamente de onde estava, sem cumprimentar de novo e sem repetir o que já foi dito. Se estavas à espera de um dado do cliente, repete apenas essa pergunta, numa frase curta.'}});
+    pedeResposta(PT_RESP+' A ligação caiu por instantes e foi retomada; a conversa anterior está acima. Continua exatamente de onde estava, sem cumprimentar de novo e sem repetir o que já foi dito. Se estavas à espera de um dado do cliente, repete apenas essa pergunta, numa frase curta.');
   } else {
-    sendEvent({type:'response.create',response:{instructions:PT_RESP+' A tua primeira fala é exatamente, palavra por palavra: "'+s.first_message+'"'}});
+    pedeResposta(PT_RESP+' A tua primeira fala é exatamente, palavra por palavra: "'+s.first_message+'"');
   }
 }
 async function ligarOpenAI(s,retoma){
@@ -308,7 +314,7 @@ async function ligar(retoma){
 }
 btn.onclick=()=>active?stop():start();
 async function start(){
-  btn.disabled=true;vers.classList.add('trancado');st.textContent='A ligar…';transcript=[];userLines={};reconnects=0;ending=false;clearTimeout(endTimer);clearTimeout(vadDebounce);vadDebounce=null;diag={underruns:0,cortes:0,falsosVad:0,dobresResp:0};bufLead=0.45;nudges=0;arranque=null;oaiAFalar=false;respAudioAtiva=false;respPend=0;aguardaConfirmacao=false;micGateUntil=0;turno=null;userFalou=false;
+  btn.disabled=true;vers.classList.add('trancado');st.textContent='A ligar…';transcript=[];userLines={};reconnects=0;ending=false;clearTimeout(endTimer);clearTimeout(vadDebounce);vadDebounce=null;diag={underruns:0,cortes:0,falsosVad:0,dobresResp:0};bufLead=0.45;nudges=0;arranque=null;oaiAFalar=false;respAudioAtiva=false;respPend=0;aguardaConfirmacao=false;micGateUntil=0;turno=null;userFalou=false;respPropria=false;destravas=0;
   conversa.innerHTML='';conversa.style.display='none';registo.style.display='none';
   try{
     await ligar(false);
@@ -318,7 +324,7 @@ async function start(){
   }catch(_){st.textContent='Não foi possível ligar. Verifique o microfone e tente novamente.';btn.disabled=false;vers.classList.remove('trancado');}
 }
 function desligarTransporte(){
-  clearTimeout(arranqueTimer);clearTimeout(vadDebounce);vadDebounce=null;arranque=null;oaiAFalar=false;respAudioAtiva=false;respPend=0;aguardaConfirmacao=false;micGateUntil=0;turno=null;userFalou=false;
+  clearTimeout(arranqueTimer);clearTimeout(vadDebounce);vadDebounce=null;arranque=null;oaiAFalar=false;respAudioAtiva=false;respPend=0;aguardaConfirmacao=false;micGateUntil=0;turno=null;userFalou=false;respPropria=false;destravas=0;
   try{dc&&dc.close();pc&&pc.close();}catch(_){}
   try{if(ws){ws.onclose=null;ws.close();}}catch(_){}
   try{micProc&&micProc.disconnect();micSrc&&micSrc.disconnect();}catch(_){}
