@@ -95,8 +95,13 @@ const btn=document.getElementById('btn'),dial=document.getElementById('dial'),st
 conversa=document.getElementById('conversa'),registo=document.getElementById('registo'),campos=document.getElementById('campos'),
 aguarde=document.getElementById('aguarde'),audioEl=document.getElementById('audio'),vers=document.getElementById('vers');
 let pc,dc,ws,stream,actx,micSrc,micProc,transcript=[],active=false,reconnects=0,wake,discoTimer,provider='openai',playT=0,playSources=[],userLines={},ending=false,endTimer,oaiAFalar=false,outGain,outDest,respAudioAtiva=false,diag={underruns:0,cortes:0},
-bufLead=0.35,lastAct=0,nudges=0,silTimer,arranque=null,arranqueTimer,respPend=0;
+bufLead=0.35,lastAct=0,nudges=0,silTimer,arranque=null,arranqueTimer,respPend=0,updPend=0;
 const vozTeste=new URLSearchParams(location.search).get('voz');
+const VOZES_A=['marin','cedar','coral','sage','shimmer','alloy','ash','ballad','echo','verse'];
+if(vozTeste&&!VOZES_A.includes(vozTeste)){ // voz que não é da Versão A => pré-seleciona a Versão B
+  provider='grok';
+  vers.querySelectorAll('button').forEach(x=>x.classList.toggle('sel',x.dataset.p==='grok'));
+}
 const CAT={SIMULACAO:'Simulação',GESTAO_APOLICE:'Gestão de apólice',SINISTRO:'Sinistro',CANCELAMENTO:'Cancelamento',PEDIDO_SEM_RESPOSTA:'Pedido sem resposta',OUTRO:'Outro'};
 const PROD={AUTOMOVEL:'Automóvel',MULTIRRISCOS_HABITACAO:'Multirriscos Habitação',MULTIRRISCOS_CONDOMINIO:'Multirriscos Condomínio',MULTIRRISCOS_EMPRESARIAL:'Multirriscos Empresarial',SAUDE:'Saúde',TVDE:'TVDE',ACIDENTES_TRABALHO_INDIVIDUAL:'Acidentes de Trabalho — Individual',ACIDENTES_TRABALHO_COLETIVO:'Acidentes de Trabalho — Coletivo',RC_GERAL:'Responsabilidade Civil Geral',RC_CONSTRUCAO:'RC Construção',RC_EMPRESARIAL:'RC Empresarial',RC_MEDICOS:'RC Médicos',RC_ARMAS_CACADOR:'RC Armas / Caçador',OBRAS_MONTAGENS:'Obras e Montagens',ANIMAIS:'Animais de Companhia',BICICLETAS_TROTINETAS:'Bicicletas e Trotinetas',VIAGEM:'Viagem',EMBARCACAO:'Embarcação',ACIDENTES_PESSOAIS:'Acidentes Pessoais'};
 const LEMBRETE='Lembra-te: falas SEMPRE em português europeu de Portugal, com sotaque de Lisboa — nunca brasileiro ("registei", nunca "registrei"). Tratas o cliente de forma neutra quanto ao género (sem "o senhor"/"a senhora", cortesia só com o verbo). Uma pergunta de cada vez; depois de pedires confirmação, calas-te e esperas pela resposta.';
@@ -155,7 +160,7 @@ function aguardarFimDoAudio(){ // espera a fila de reprodução esvaziar (600ms 
 function marcaAtividade(){lastAct=Date.now();}
 function handleEvent(ev){
   marcaAtividade();
-  if(ev.type==='session.updated'&&arranque){const f=arranque;arranque=null;clearTimeout(arranqueTimer);f();}
+  if(ev.type==='session.updated'&&arranque){if(updPend>0)updPend--;if(updPend===0){const f=arranque;arranque=null;clearTimeout(arranqueTimer);f();}}
   if(ev.type==='conversation.item.input_audio_transcription.completed'&&ev.transcript){linhaUser(ev.item_id,ev.transcript.trim());nudges=0;
     if(!ev.status||ev.status==='completed')respPend=Date.now(); // turno do cliente fechado: resposta é devida
   }
@@ -242,8 +247,10 @@ async function ligarGrok(s,retoma){
   await new Promise((ok,ko)=>{
     ws=new WebSocket(s.ws_url,['xai-client-secret.'+s.client_secret]);
     ws.onopen=()=>{
+      updPend=s.voice?2:1; // a primeira fala espera pela confirmação do ÚLTIMO update
+      if(s.voice) ws.send(JSON.stringify({type:'session.update',session:{voice:s.voice}})); // voz em separado: nunca pode arrastar as instruções
       ws.send(JSON.stringify({type:'session.update',session:{
-        instructions:s.instructions,voice:s.voice,
+        instructions:s.instructions,
         turn_detection:{type:'server_vad'},
         reasoning:{effort:'none'},
         audio:{input:{transcription:{language_hint:'pt-PT'}}},
