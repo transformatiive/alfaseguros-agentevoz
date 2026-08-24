@@ -106,6 +106,8 @@ if(vozTeste&&!VOZES_A.includes(vozTeste)){ // voz que não é da Versão A => pr
 const CAT={SIMULACAO:'Simulação',GESTAO_APOLICE:'Gestão de apólice',SINISTRO:'Sinistro',CANCELAMENTO:'Cancelamento',PEDIDO_SEM_RESPOSTA:'Pedido sem resposta',OUTRO:'Outro'};
 const PROD={AUTOMOVEL:'Automóvel',MULTIRRISCOS_HABITACAO:'Multirriscos Habitação',MULTIRRISCOS_CONDOMINIO:'Multirriscos Condomínio',MULTIRRISCOS_EMPRESARIAL:'Multirriscos Empresarial',SAUDE:'Saúde',TVDE:'TVDE',ACIDENTES_TRABALHO_INDIVIDUAL:'Acidentes de Trabalho — Individual',ACIDENTES_TRABALHO_COLETIVO:'Acidentes de Trabalho — Coletivo',RC_GERAL:'Responsabilidade Civil Geral',RC_CONSTRUCAO:'RC Construção',RC_EMPRESARIAL:'RC Empresarial',RC_MEDICOS:'RC Médicos',RC_ARMAS_CACADOR:'RC Armas / Caçador',OBRAS_MONTAGENS:'Obras e Montagens',ANIMAIS:'Animais de Companhia',BICICLETAS_TROTINETAS:'Bicicletas e Trotinetas',VIAGEM:'Viagem',EMBARCACAO:'Embarcação',ACIDENTES_PESSOAIS:'Acidentes Pessoais'};
 const LEMBRETE='Lembra-te: falas SEMPRE em português europeu de Portugal, com sotaque de Lisboa — nunca brasileiro ("registei", nunca "registrei"). Tratas o cliente de forma neutra quanto ao género (sem "o senhor"/"a senhora", cortesia só com o verbo). Uma pergunta de cada vez; depois de pedires confirmação, calas-te e esperas pela resposta.';
+const LEMBRETE_PT='Língua pt-PT OBRIGATÓRIA: telemóvel (nunca celular), autocarro (nunca ônibus), está a fazer (nunca está fazendo), registei (nunca registrei), ecrã (nunca tela). Responde só em português europeu de Portugal.';
+const PT_RESP='Responde em português europeu de Portugal (pt-PT). Nunca uses vocabulário brasileiro.';
 vers.querySelectorAll('button').forEach(b=>b.onclick=()=>{if(active)return;provider=b.dataset.p;vers.querySelectorAll('button').forEach(x=>x.classList.toggle('sel',x===b));});
 function novaLinha(role,text){
   const d=document.createElement('div');d.className='msg '+(role==='user'?'cli':'alfa');
@@ -185,8 +187,11 @@ function handleEvent(ev){
   if(ev.type==='input_audio_buffer.speech_started'&&provider==='openai'&&oaiAFalar){diag.cortes++;} // interrupção (voz/ruído) com a Alfa a falar
   if(provider==='openai'&&ev.type==='output_audio_buffer.cleared'){oaiAFalar=false;}
   if(ev.type==='response.done'&&provider==='grok'){respAudioAtiva=false;}
-  if(ev.type==='response.done'&&active&&!ending&&provider==='openai'){ // reforço invisível por turno — só na Versão A (a sessão B leva as regras completas; no Grok a injeção provocava respostas espúrias e mudanças de tom)
+  if(ev.type==='response.done'&&active&&!ending&&provider==='openai'){ // reforço invisível por turno — Versão A
     sendEvent({type:'conversation.item.create',item:{type:'message',role:'system',content:[{type:'input_text',text:LEMBRETE}]}});
+  }
+  if(ev.type==='response.done'&&active&&!ending&&provider==='grok'){ // reforço só de língua — o LEMBRETE completo provocava mudanças de tom
+    sendEvent({type:'conversation.item.create',item:{type:'message',role:'system',content:[{type:'input_text',text:LEMBRETE_PT}]}});
   }
   if(ev.type==='response.function_call_arguments.done'&&ev.name==='end_call'){
     sendEvent({type:'conversation.item.create',item:{type:'function_call_output',call_id:ev.call_id,output:'{"ok":true}'}});
@@ -210,16 +215,16 @@ function vigiaSilencio(){ // 5s sem ninguém falar => a Alfa retoma; à 3ª vez 
     const limiteSilencio=aguardaConfirmacao?SILENCIO_CONFIRMACAO_MS:SILENCIO_MS;
     if(respPend&&Date.now()-respPend>4000){ // o cliente falou e não veio resposta: destrava (segmento preso no servidor)
       respPend=0;
-      sendEvent({type:'response.create',response:{instructions:'Responde AGORA ao que o cliente acabou de dizer, em português europeu de Portugal e exatamente no mesmo tom de voz. Se não percebeste, pede para repetir numa frase curta.'}});
+      sendEvent({type:'response.create',response:{instructions:PT_RESP+' Responde AGORA ao que o cliente acabou de dizer, no mesmo tom de voz. Se não percebeste, pede para repetir numa frase curta.'}});
       return;
     }
     if(Date.now()-lastAct<=limiteSilencio)return;
     marcaAtividade();nudges++;
     if(nudges<=2){
-      sendEvent({type:'response.create',response:{instructions:'O cliente está em silêncio há alguns segundos. Em português europeu de Portugal, pergunta educadamente se ainda está aí e repete, numa frase curta, a última pergunta que tinhas feito. Nada mais.'}});
+      sendEvent({type:'response.create',response:{instructions:PT_RESP+' O cliente está em silêncio há alguns segundos. Pergunta educadamente se ainda está aí e repete, numa frase curta, a última pergunta que tinhas feito. Nada mais.'}});
     } else {
       clearInterval(silTimer); // uma só despedida
-      sendEvent({type:'response.create',response:{instructions:'O cliente não responde. Em português europeu de Portugal, diz numa frase curta que o pedido fica registado com os dados já recolhidos e que um consultor entrará em contacto; despede-te e chama a ferramenta end_call.'}});
+      sendEvent({type:'response.create',response:{instructions:PT_RESP+' O cliente não responde. Diz numa frase curta que o pedido fica registado com os dados já recolhidos e que um consultor entrará em contacto; despede-te e chama a ferramenta end_call.'}});
       setTimeout(()=>{if(active&&!ending)stop();},12000);
     }
   },1000);
@@ -230,9 +235,9 @@ function replayOuAbertura(s,retoma){
       sendEvent({type:'conversation.item.create',item:{type:'message',role:t.role==='user'?'user':'assistant',
         content:[t.role==='user'?{type:'input_text',text:t.text}:{type:'text',text:t.text}]}});
     }
-    sendEvent({type:'response.create',response:{instructions:'Fala em português europeu de Portugal, com sotaque europeu. A ligação caiu por instantes e foi retomada; a conversa anterior está acima. Continua exatamente de onde estava, sem cumprimentar de novo e sem repetir o que já foi dito. Se estavas à espera de um dado do cliente, repete apenas essa pergunta, numa frase curta.'}});
+    sendEvent({type:'response.create',response:{instructions:PT_RESP+' A ligação caiu por instantes e foi retomada; a conversa anterior está acima. Continua exatamente de onde estava, sem cumprimentar de novo e sem repetir o que já foi dito. Se estavas à espera de um dado do cliente, repete apenas essa pergunta, numa frase curta.'}});
   } else {
-    sendEvent({type:'response.create',response:{instructions:'Fala em português europeu de Portugal, com sotaque europeu (nunca brasileiro). A tua primeira fala é exatamente, palavra por palavra: "'+s.first_message+'"'}});
+    sendEvent({type:'response.create',response:{instructions:PT_RESP+' A tua primeira fala é exatamente, palavra por palavra: "'+s.first_message+'"'}});
   }
 }
 async function ligarOpenAI(s,retoma){
@@ -266,7 +271,7 @@ async function ligarGrok(s,retoma){
         instructions:s.instructions,
         turn_detection:{type:'server_vad',threshold:0.9,silence_duration_ms:700,prefix_padding_ms:333},
         reasoning:{effort:'none'},
-        audio:{input:{transcription:{language_hint:'pt-PT'}}},
+        audio:{input:{transcription:{language_hint:'pt-PT',keyterms:['Alfaseguros','telemóvel','apólice','matrícula','morada','código postal','consultor','registei']}}},
         tools:[{type:'function',name:'end_call',description:'Termina a chamada. Usar APENAS depois de o cliente confirmar o resumo e de o agente dizer a frase de fecho completa.',parameters:{type:'object',properties:{},additionalProperties:false}}],
         tool_choice:'auto'
       }}));
