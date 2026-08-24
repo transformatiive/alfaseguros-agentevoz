@@ -145,7 +145,7 @@ app.post("/api/extract", async (req, res) => {
       fetch(RESULT_WEBHOOK, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resultado, transcript, data: new Date().toISOString(), origem: "alfa-voz-web" })
+        body: JSON.stringify({ resultado, transcript, diag: req.body.diag, data: new Date().toISOString(), origem: "alfa-voz-web" })
       }).catch(() => {});
     }
     res.json({ resultado, transcript });
