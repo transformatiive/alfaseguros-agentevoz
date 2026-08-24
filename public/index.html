@@ -94,7 +94,7 @@ footer a{color:var(--bordeaux);font-weight:600;text-decoration:none}
 const btn=document.getElementById('btn'),dial=document.getElementById('dial'),st=document.getElementById('status'),
 conversa=document.getElementById('conversa'),registo=document.getElementById('registo'),campos=document.getElementById('campos'),
 aguarde=document.getElementById('aguarde'),audioEl=document.getElementById('audio'),vers=document.getElementById('vers');
-let pc,dc,ws,stream,actx,micSrc,micProc,transcript=[],active=false,reconnects=0,wake,discoTimer,provider='openai',playT=0,playSources=[],userLines={},ending=false,endTimer,oaiAFalar=false;
+let pc,dc,ws,stream,actx,micSrc,micProc,transcript=[],active=false,reconnects=0,wake,discoTimer,provider='openai',playT=0,playSources=[],userLines={},ending=false,endTimer,oaiAFalar=false,outGain,outDest,respAudioAtiva=false,diag={underruns:0,cortes:0};
 const vozTeste=new URLSearchParams(location.search).get('voz');
 const CAT={SIMULACAO:'Simulação',GESTAO_APOLICE:'Gestão de apólice',SINISTRO:'Sinistro',CANCELAMENTO:'Cancelamento',PEDIDO_SEM_RESPOSTA:'Pedido sem resposta',OUTRO:'Outro'};
 const PROD={AUTOMOVEL:'Automóvel',MULTIRRISCOS_HABITACAO:'Multirriscos Habitação',MULTIRRISCOS_CONDOMINIO:'Multirriscos Condomínio',MULTIRRISCOS_EMPRESARIAL:'Multirriscos Empresarial',SAUDE:'Saúde',TVDE:'TVDE',ACIDENTES_TRABALHO_INDIVIDUAL:'Acidentes de Trabalho — Individual',ACIDENTES_TRABALHO_COLETIVO:'Acidentes de Trabalho — Coletivo',RC_GERAL:'Responsabilidade Civil Geral',RC_CONSTRUCAO:'RC Construção',RC_EMPRESARIAL:'RC Empresarial',RC_MEDICOS:'RC Médicos',RC_ARMAS_CACADOR:'RC Armas / Caçador',OBRAS_MONTAGENS:'Obras e Montagens',ANIMAIS:'Animais de Companhia',BICICLETAS_TROTINETAS:'Bicicletas e Trotinetas',VIAGEM:'Viagem',EMBARCACAO:'Embarcação',ACIDENTES_PESSOAIS:'Acidentes Pessoais'};
@@ -133,8 +133,14 @@ function resample(f,from,to){if(from===to)return f;
   return out;}
 function playDelta(b64){const f=b64ToF32(b64);if(!f.length||!actx)return;
   const buf=actx.createBuffer(1,f.length,24000);buf.getChannelData(0).set(f);
-  const src=actx.createBufferSource();src.buffer=buf;src.connect(actx.destination);
-  const t=Math.max(actx.currentTime+0.06,playT);src.start(t);playT=t+buf.duration;
+  const src=actx.createBufferSource();src.buffer=buf;src.connect(outGain);
+  const now=actx.currentTime;
+  if(playT<=now+0.02){ // fila vazia: amortecedor de 350ms contra oscilação de rede (TCP)
+    if(respAudioAtiva)diag.underruns++;
+    playT=now+0.35;
+  }
+  respAudioAtiva=true;
+  src.start(playT);playT+=buf.duration;
   playSources.push(src);src.onended=()=>{const i=playSources.indexOf(src);if(i>=0)playSources.splice(i,1);};}
 function stopPlayback(){playSources.forEach(s=>{try{s.stop()}catch(_){}});playSources=[];playT=0;}
 function aguardarFimDoAudio(){ // espera a fila de reprodução esvaziar (600ms seguidos) antes de desligar
@@ -150,7 +156,8 @@ function handleEvent(ev){
   if(ev.type==='conversation.item.input_audio_transcription.updated'&&ev.transcript) linhaUser(ev.item_id,ev.transcript.trim());
   if((ev.type==='response.output_audio_transcript.done'||ev.type==='response.audio_transcript.done')&&ev.transcript) linha('assistant',ev.transcript.trim());
   if((ev.type==='response.output_audio.delta'||ev.type==='response.audio.delta')&&ev.delta&&provider==='grok') playDelta(ev.delta);
-  if(ev.type==='input_audio_buffer.speech_started'&&provider==='grok') stopPlayback();
+  if(ev.type==='input_audio_buffer.speech_started'&&provider==='grok'){if(playSources.length)diag.cortes++;stopPlayback();}
+  if(ev.type==='response.done'&&provider==='grok'){respAudioAtiva=false;}
   if(ev.type==='response.done'&&active&&!ending){ // reforço invisível em cada interação
     sendEvent({type:'conversation.item.create',item:{type:'message',role:'system',content:[{type:'input_text',text:LEMBRETE}]}});
   }
@@ -198,13 +205,16 @@ async function ligarOpenAI(s,retoma){
 }
 async function ligarGrok(s,retoma){
   actx=actx||new (window.AudioContext||window.webkitAudioContext)();
-  await actx.resume();playT=0;
+  await actx.resume();playT=0;respAudioAtiva=false;
+  if(!outGain){outGain=actx.createGain();outDest=actx.createMediaStreamDestination();outGain.connect(outDest);}
+  audioEl.srcObject=outDest.stream;audioEl.play().catch(()=>{}); // reprodução via elemento áudio => cancelamento de eco do browser aplica-se
   await new Promise((ok,ko)=>{
     ws=new WebSocket(s.ws_url,['xai-client-secret.'+s.client_secret]);
     ws.onopen=()=>{
       ws.send(JSON.stringify({type:'session.update',session:{
         instructions:s.instructions,voice:s.voice,
         turn_detection:{type:'server_vad'},
+        reasoning:{effort:'none'},
         audio:{input:{transcription:{language_hint:'pt-PT'}}},
         tools:[{type:'function',name:'end_call',description:'Termina a chamada. Usar APENAS depois de o cliente confirmar o resumo e de o agente dizer a frase de fecho completa.',parameters:{type:'object',properties:{},additionalProperties:false}}],
         tool_choice:'auto'
@@ -233,7 +243,7 @@ async function ligar(retoma){
 }
 btn.onclick=()=>active?stop():start();
 async function start(){
-  btn.disabled=true;st.textContent='A ligar…';transcript=[];userLines={};reconnects=0;ending=false;clearTimeout(endTimer);
+  btn.disabled=true;st.textContent='A ligar…';transcript=[];userLines={};reconnects=0;ending=false;clearTimeout(endTimer);diag={underruns:0,cortes:0};
   conversa.innerHTML='';conversa.style.display='none';registo.style.display='none';
   try{
     await ligar(false);
@@ -272,7 +282,7 @@ async function stop(){
   dial.classList.remove('on');vers.classList.remove('trancado');btn.setAttribute('aria-label','Iniciar chamada');
   if(transcript.length){
     st.textContent='';aguarde.style.display='flex';
-    let r={};try{r=await (await fetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript})})).json();}catch(_){}
+    let r={};try{r=await (await fetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript,diag:Object.assign({},diag,{reconexoes:reconnects,motor:provider==='grok'?'Versão B':'Versão A'})})})).json();}catch(_){}
     aguarde.style.display='none';
     const d=r.resultado;
     if(d){
