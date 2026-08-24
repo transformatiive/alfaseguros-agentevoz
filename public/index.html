@@ -105,7 +105,6 @@ if(vozTeste&&!VOZES_A.includes(vozTeste)){ // voz que não é da Versão A => pr
 }
 const CAT={SIMULACAO:'Simulação',GESTAO_APOLICE:'Gestão de apólice',SINISTRO:'Sinistro',CANCELAMENTO:'Cancelamento',PEDIDO_SEM_RESPOSTA:'Pedido sem resposta',OUTRO:'Outro'};
 const PROD={AUTOMOVEL:'Automóvel',MULTIRRISCOS_HABITACAO:'Multirriscos Habitação',MULTIRRISCOS_CONDOMINIO:'Multirriscos Condomínio',MULTIRRISCOS_EMPRESARIAL:'Multirriscos Empresarial',SAUDE:'Saúde',TVDE:'TVDE',ACIDENTES_TRABALHO_INDIVIDUAL:'Acidentes de Trabalho — Individual',ACIDENTES_TRABALHO_COLETIVO:'Acidentes de Trabalho — Coletivo',RC_GERAL:'Responsabilidade Civil Geral',RC_CONSTRUCAO:'RC Construção',RC_EMPRESARIAL:'RC Empresarial',RC_MEDICOS:'RC Médicos',RC_ARMAS_CACADOR:'RC Armas / Caçador',OBRAS_MONTAGENS:'Obras e Montagens',ANIMAIS:'Animais de Companhia',BICICLETAS_TROTINETAS:'Bicicletas e Trotinetas',VIAGEM:'Viagem',EMBARCACAO:'Embarcação',ACIDENTES_PESSOAIS:'Acidentes Pessoais'};
-const LEMBRETE='Lembra-te: falas SEMPRE em português europeu de Portugal, com sotaque de Lisboa — nunca brasileiro ("registei", nunca "registrei"). Tratas o cliente de forma neutra quanto ao género (sem "o senhor"/"a senhora", cortesia só com o verbo). Uma pergunta de cada vez; depois de pedires confirmação, calas-te e esperas pela resposta.';
 const PT_RESP='Responde em português europeu de Portugal (pt-PT). Nunca uses vocabulário brasileiro. Uma só fala — cala-te a seguir e espera pelo cliente.';
 vers.querySelectorAll('button').forEach(b=>b.onclick=()=>{if(active)return;provider=b.dataset.p;vers.querySelectorAll('button').forEach(x=>x.classList.toggle('sel',x===b));});
 function novaLinha(role,text){
@@ -194,10 +193,10 @@ function handleEvent(ev){
   if(ev.type==='input_audio_buffer.speech_started'&&provider==='openai'&&oaiAFalar){diag.cortes++;} // interrupção (voz/ruído) com a Alfa a falar
   if(provider==='openai'&&ev.type==='output_audio_buffer.cleared'){oaiAFalar=false;}
   if(ev.type==='response.done'&&provider==='grok'){respAudioAtiva=false;}
-  if(ev.type==='response.done'&&active&&!ending&&provider==='openai'){ // reforço invisível por turno — Versão A
-    sendEvent({type:'conversation.item.create',item:{type:'message',role:'system',content:[{type:'input_text',text:LEMBRETE}]}});
-  }
-  // Grok: sem injeção por turno — provoca 2.ª fala seguida, mudança de tom e re-confirmações
+  // Sem injeção de lembretes por turno em nenhuma das versões: o sotaque e o
+  // turno vivem nas instruções da sessão (ver A_RULES/GROK_INSTRUCTIONS no
+  // server). Injetar por turno provoca 2.ª fala seguida, mudança de tom e
+  // re-confirmações, e é contrário à recomendação da OpenAI.
   if(ev.type==='response.function_call_arguments.done'&&ev.name==='end_call'){
     sendEvent({type:'conversation.item.create',item:{type:'function_call_output',call_id:ev.call_id,output:'{"ok":true}'}});
     ending=true;st.textContent='A Alfa está a despedir-se…';
