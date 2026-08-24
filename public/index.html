@@ -95,7 +95,7 @@ const btn=document.getElementById('btn'),dial=document.getElementById('dial'),st
 conversa=document.getElementById('conversa'),registo=document.getElementById('registo'),campos=document.getElementById('campos'),
 aguarde=document.getElementById('aguarde'),audioEl=document.getElementById('audio'),vers=document.getElementById('vers');
 let pc,dc,ws,stream,actx,micSrc,micProc,transcript=[],active=false,reconnects=0,wake,discoTimer,provider='openai',playT=0,playSources=[],userLines={},ending=false,endTimer,oaiAFalar=false,outGain,outDest,respAudioAtiva=false,diag={underruns:0,cortes:0},
-bufLead=0.35,lastAct=0,nudges=0,silTimer,arranque=null,arranqueTimer;
+bufLead=0.35,lastAct=0,nudges=0,silTimer,arranque=null,arranqueTimer,respPend=0;
 const vozTeste=new URLSearchParams(location.search).get('voz');
 const CAT={SIMULACAO:'Simulação',GESTAO_APOLICE:'Gestão de apólice',SINISTRO:'Sinistro',CANCELAMENTO:'Cancelamento',PEDIDO_SEM_RESPOSTA:'Pedido sem resposta',OUTRO:'Outro'};
 const PROD={AUTOMOVEL:'Automóvel',MULTIRRISCOS_HABITACAO:'Multirriscos Habitação',MULTIRRISCOS_CONDOMINIO:'Multirriscos Condomínio',MULTIRRISCOS_EMPRESARIAL:'Multirriscos Empresarial',SAUDE:'Saúde',TVDE:'TVDE',ACIDENTES_TRABALHO_INDIVIDUAL:'Acidentes de Trabalho — Individual',ACIDENTES_TRABALHO_COLETIVO:'Acidentes de Trabalho — Coletivo',RC_GERAL:'Responsabilidade Civil Geral',RC_CONSTRUCAO:'RC Construção',RC_EMPRESARIAL:'RC Empresarial',RC_MEDICOS:'RC Médicos',RC_ARMAS_CACADOR:'RC Armas / Caçador',OBRAS_MONTAGENS:'Obras e Montagens',ANIMAIS:'Animais de Companhia',BICICLETAS_TROTINETAS:'Bicicletas e Trotinetas',VIAGEM:'Viagem',EMBARCACAO:'Embarcação',ACIDENTES_PESSOAIS:'Acidentes Pessoais'};
@@ -156,8 +156,11 @@ function marcaAtividade(){lastAct=Date.now();}
 function handleEvent(ev){
   marcaAtividade();
   if(ev.type==='session.updated'&&arranque){const f=arranque;arranque=null;clearTimeout(arranqueTimer);f();}
-  if(ev.type==='conversation.item.input_audio_transcription.completed'&&ev.transcript){linhaUser(ev.item_id,ev.transcript.trim());nudges=0;}
+  if(ev.type==='conversation.item.input_audio_transcription.completed'&&ev.transcript){linhaUser(ev.item_id,ev.transcript.trim());nudges=0;
+    if(!ev.status||ev.status==='completed')respPend=Date.now(); // turno do cliente fechado: resposta é devida
+  }
   if(ev.type==='conversation.item.input_audio_transcription.updated'&&ev.transcript){linhaUser(ev.item_id,ev.transcript.trim());nudges=0;}
+  if(ev.type==='response.created'){respPend=0;}
   if((ev.type==='response.output_audio_transcript.done'||ev.type==='response.audio_transcript.done')&&ev.transcript) linha('assistant',ev.transcript.trim());
   if((ev.type==='response.output_audio.delta'||ev.type==='response.audio.delta')&&ev.delta&&provider==='grok') playDelta(ev.delta);
   if(ev.type==='input_audio_buffer.speech_started'&&provider==='grok'){if(playSources.length)diag.cortes++;stopPlayback();respAudioAtiva=false;}
@@ -187,6 +190,11 @@ function vigiaSilencio(){ // 5s sem ninguém falar => a Alfa retoma; à 3ª vez 
     if(!active||ending)return;
     if(provider==='grok'&&playSources.length)return;
     if(provider==='openai'&&oaiAFalar)return;
+    if(respPend&&Date.now()-respPend>4000){ // o cliente falou e não veio resposta: destrava (segmento preso no servidor)
+      respPend=0;
+      sendEvent({type:'response.create',response:{instructions:'Responde AGORA ao que o cliente acabou de dizer, em português europeu de Portugal e exatamente no mesmo tom de voz. Se não percebeste, pede para repetir numa frase curta.'}});
+      return;
+    }
     if(Date.now()-lastAct<=5000)return;
     marcaAtividade();nudges++;
     if(nudges<=2){
@@ -269,7 +277,7 @@ async function ligar(retoma){
 }
 btn.onclick=()=>active?stop():start();
 async function start(){
-  btn.disabled=true;vers.classList.add('trancado');st.textContent='A ligar…';transcript=[];userLines={};reconnects=0;ending=false;clearTimeout(endTimer);diag={underruns:0,cortes:0};bufLead=0.35;nudges=0;arranque=null;oaiAFalar=false;respAudioAtiva=false;
+  btn.disabled=true;vers.classList.add('trancado');st.textContent='A ligar…';transcript=[];userLines={};reconnects=0;ending=false;clearTimeout(endTimer);diag={underruns:0,cortes:0};bufLead=0.35;nudges=0;arranque=null;oaiAFalar=false;respAudioAtiva=false;respPend=0;
   conversa.innerHTML='';conversa.style.display='none';registo.style.display='none';
   try{
     await ligar(false);
@@ -279,7 +287,7 @@ async function start(){
   }catch(_){st.textContent='Não foi possível ligar. Verifique o microfone e tente novamente.';btn.disabled=false;vers.classList.remove('trancado');}
 }
 function desligarTransporte(){
-  clearTimeout(arranqueTimer);arranque=null;oaiAFalar=false;respAudioAtiva=false;
+  clearTimeout(arranqueTimer);arranque=null;oaiAFalar=false;respAudioAtiva=false;respPend=0;
   try{dc&&dc.close();pc&&pc.close();}catch(_){}
   try{if(ws){ws.onclose=null;ws.close();}}catch(_){}
   try{micProc&&micProc.disconnect();micSrc&&micSrc.disconnect();}catch(_){}
