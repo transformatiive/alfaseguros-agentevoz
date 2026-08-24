@@ -164,7 +164,7 @@ function handleEvent(ev){
   if(ev.type==='input_audio_buffer.speech_started'&&provider==='openai'&&oaiAFalar){diag.cortes++;} // interrupção (voz/ruído) com a Alfa a falar
   if(provider==='openai'&&ev.type==='output_audio_buffer.cleared'){oaiAFalar=false;}
   if(ev.type==='response.done'&&provider==='grok'){respAudioAtiva=false;}
-  if(ev.type==='response.done'&&active&&!ending){ // reforço invisível em cada interação
+  if(ev.type==='response.done'&&active&&!ending&&provider==='openai'){ // reforço invisível por turno — só na Versão A (a sessão B leva as regras completas; no Grok a injeção provocava respostas espúrias e mudanças de tom)
     sendEvent({type:'conversation.item.create',item:{type:'message',role:'system',content:[{type:'input_text',text:LEMBRETE}]}});
   }
   if(ev.type==='response.function_call_arguments.done'&&ev.name==='end_call'){
