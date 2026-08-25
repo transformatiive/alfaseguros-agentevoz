@@ -94,7 +94,7 @@ footer a{color:var(--bordeaux);font-weight:600;text-decoration:none}
 const btn=document.getElementById('btn'),dial=document.getElementById('dial'),st=document.getElementById('status'),
 conversa=document.getElementById('conversa'),registo=document.getElementById('registo'),campos=document.getElementById('campos'),
 aguarde=document.getElementById('aguarde'),audioEl=document.getElementById('audio'),vers=document.getElementById('vers');
-let pc,dc,ws,stream,actx,micSrc,micProc,transcript=[],active=false,reconnects=0,wake,discoTimer,provider='grok',playT=0,playSources=[],userLines={},ending=false,endTimer,oaiAFalar=false,outGain,outDest,respAudioAtiva=false,diag={underruns:0,cortes:0,falsosVad:0,dobresResp:0},
+let pc,dc,ws,stream,actx,micSrc,micProc,transcript=[],active=false,reconnects=0,wake,discoTimer,provider='grok',playT=0,playSources=[],userLines={},ending=false,endTimer,oaiAFalar=false,outGain,outDest,respAudioAtiva=false,diag={underruns:0,cortes:0,falsosVad:0,dobresResp:0,destravas:0,limpezas:0},
 bufLead=0.45,lastAct=0,nudges=0,silTimer,arranque=null,arranqueTimer,respPend=0,updPend=0,vadDebounce=null,aguardaConfirmacao=false,micGateUntil=0,turno=null,userFalou=false,respPropria=false,destravas=0,convId=null;
 const SILENCIO_MS=5000,SILENCIO_CONFIRMACAO_MS=12000,VAD_DEBOUNCE_MS=250,MIC_GATE_TAIL_MS=350;
 const vozTeste=new URLSearchParams(location.search).get('voz');
@@ -161,8 +161,16 @@ function aguardarFimDoAudio(){ // espera a fila de reprodução esvaziar (600ms 
     else vazio=0;
   },200);
 }
+const EM_CHAMADA='Em chamada. Fale normalmente.';
+function estado(t){if(active&&!ending)st.textContent=t;} // sinal de vida: sem isto o cliente acha que a chamada morreu
 function marcaAtividade(){lastAct=Date.now();}
-function pedeResposta(instr){respPropria=true;sendEvent({type:'response.create',response:{instructions:instr}});} // marcada: a guarda de fala dupla não a pode cancelar
+function pedeResposta(instr){respPropria=true;sendEvent({type:'response.create',response:{instructions:instr}});}
+function destrava(instr,limpar){ // limpar descarta o segmento preso no buffer de entrada (probe 26/08: a xAI confirma com input_audio_buffer.cleared)
+  diag.destravas++;
+  if(limpar&&provider==='grok'){diag.limpezas++;sendEvent({type:'input_audio_buffer.clear'});}
+  estado('A Alice está a retomar…');
+  pedeResposta(instr);
+} // marcada: a guarda de fala dupla não a pode cancelar
 function handleEvent(ev){
   marcaAtividade();
   if(ev.type==='session.updated'&&arranque){if(updPend>0)updPend--;if(updPend===0){const f=arranque;arranque=null;clearTimeout(arranqueTimer);f();}}
@@ -178,7 +186,7 @@ function handleEvent(ev){
     respPropria=false;userFalou=false;destravas=0;
   }
   if((ev.type==='response.output_audio_transcript.done'||ev.type==='response.audio_transcript.done')&&ev.transcript){
-    const txt=ev.transcript.trim();linha('assistant',txt);turno='assistant';
+    const txt=ev.transcript.trim();linha('assistant',txt);turno='assistant';estado(EM_CHAMADA);
     if(provider==='grok'&&isConfirmacao(txt))aguardaConfirmacao=true;
   }
   if((ev.type==='response.output_audio.delta'||ev.type==='response.audio.delta')&&ev.delta&&provider==='grok') playDelta(ev.delta);
@@ -218,15 +226,16 @@ function vigiaSilencio(){ // 5s sem ninguém falar => a Alice retoma; à 3ª vez
     if(provider==='eleven')return; // a ElevenLabs conduz o turno do lado dela; um aviso nosso aqui não chegaria a lado nenhum
     if(alfaAFalar())return;
     const limiteSilencio=aguardaConfirmacao?SILENCIO_CONFIRMACAO_MS:SILENCIO_MS;
+    if(respPend&&turno==='user'&&Date.now()-respPend>3000)estado('A Alice está a pensar…');
     if(respPend&&turno==='user'&&Date.now()-respPend>4000){ // o cliente falou e não veio resposta: destrava (segmento preso no servidor)
       respPend=0;
-      pedeResposta(LING_RESP+' Responde AGORA ao que o cliente acabou de dizer, no mesmo tom de voz. Se não percebeste, pede para repetir numa frase curta.');
+      destrava(LING_RESP+' Responde AGORA ao que o cliente acabou de dizer, no mesmo tom de voz. Se não percebeste, pede para repetir numa frase curta.',false); // 1.ª tentativa sem limpar: pode ser só uma resposta lenta
       return;
     }
     if(Date.now()-lastAct<=limiteSilencio)return;
     if(turno==='user'){ // o cliente falou por último e não veio resposta: segmento preso no servidor
       if(destravas<3){destravas++;marcaAtividade();
-        pedeResposta(LING_RESP+' Responde AGORA ao que o cliente acabou de dizer, no mesmo tom de voz. Se não percebeste, pede para repetir numa frase curta.');
+        destrava(LING_RESP+' Responde AGORA ao que o cliente acabou de dizer, no mesmo tom de voz. Se não percebeste, pede para repetir numa frase curta.',true); // já falhou uma vez: o que estiver no buffer é o segmento preso
         return;}
       // três tentativas sem resposta: trata como silêncio (segue para o aviso/despedida)
     }
@@ -282,7 +291,7 @@ async function ligarGrok(s,retoma){
       if(s.voice) ws.send(JSON.stringify({type:'session.update',session:{voice:s.voice}})); // voz em separado: nunca pode arrastar as instruções
       ws.send(JSON.stringify({type:'session.update',session:{
         instructions:s.instructions,
-        turn_detection:{type:'server_vad',threshold:0.9,silence_duration_ms:700,prefix_padding_ms:333,idle_timeout_ms:15000}, // idle_timeout_ms: rede de segurança do lado do servidor, acima da nossa vigia de 5s — apanha os segmentos
+        turn_detection:{type:'server_vad',threshold:0.9,silence_duration_ms:700,prefix_padding_ms:333,idle_timeout_ms:10000}, // idle_timeout_ms: rede de segurança do lado do servidor, acima da nossa vigia de 5s mas abaixo da paciência do cliente — apanha os segmentos
         // presos em que o response.create do browser não chega a produzir fala (a causa das paragens da Versão B)
         reasoning:{effort:'none'},
         // language_hint é uma sugestão, não um bloqueio: mantém a qualidade do pt-PT (a esmagadora maioria
@@ -364,7 +373,7 @@ async function ligar(retoma){
 }
 btn.onclick=()=>active?stop():start();
 async function start(){
-  btn.disabled=true;vers.classList.add('trancado');st.textContent='A ligar…';transcript=[];userLines={};reconnects=0;ending=false;clearTimeout(endTimer);clearTimeout(vadDebounce);vadDebounce=null;diag={underruns:0,cortes:0,falsosVad:0,dobresResp:0};bufLead=0.45;nudges=0;arranque=null;oaiAFalar=false;respAudioAtiva=false;respPend=0;aguardaConfirmacao=false;micGateUntil=0;turno=null;userFalou=false;respPropria=false;destravas=0;
+  btn.disabled=true;vers.classList.add('trancado');st.textContent='A ligar…';transcript=[];userLines={};reconnects=0;ending=false;clearTimeout(endTimer);clearTimeout(vadDebounce);vadDebounce=null;diag={underruns:0,cortes:0,falsosVad:0,dobresResp:0,destravas:0,limpezas:0};bufLead=0.45;nudges=0;arranque=null;oaiAFalar=false;respAudioAtiva=false;respPend=0;aguardaConfirmacao=false;micGateUntil=0;turno=null;userFalou=false;respPropria=false;destravas=0;
   conversa.innerHTML='';conversa.style.display='none';registo.style.display='none';
   try{
     await ligar(false);
