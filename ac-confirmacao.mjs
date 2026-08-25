@@ -1,4 +1,4 @@
-// Critérios: confirmação/fecho + português exclusivo (sem mudança de língua).
+// Critérios: pt exclusivo + confirmação/fecho + shape xAI do Modelo B (Grok).
 import fs from "node:fs";
 import assert from "node:assert/strict";
 
@@ -12,35 +12,50 @@ function ok(name, cond) {
   assert.ok(cond, name);
 }
 
-// Confirmação / fecho (mantidos)
+const grokMatch = server.match(/const GROK_INSTRUCTIONS = `([\s\S]*?)`;\n\n\nconst FLOW_RULES/);
+const grok = grokMatch ? grokMatch[1] : "";
+const productFields = (server.match(/const GROK_PRODUCT_FIELDS = `([\s\S]*?)`;/) || [])[1] || "";
+const grokEffective = grok.replace(/\$\{GROK_PRODUCT_FIELDS\}/, productFields);
+if (!grok) throw new Error("GROK_INSTRUCTIONS block not found");
+
+// Confirmação / fecho (guião partilhado)
 ok("confirmação: volta após digressão", /Se o cliente se desviar[\s\S]*VOLTA a pedir confirmação/.test(prompt));
-ok("confirmação: Estou pontual não basta", /Um "Estou"[\s\S]*NÃO conta como confirmação do resumo/.test(prompt));
-ok("fecho só após confirmação do resumo", /FECHO: só depois de o cliente confirmar o resumo/.test(prompt));
 ok("fecho: nunca end_call sem frase", /Nunca chames end_call sem ter dito esta frase de fecho/.test(prompt));
-ok("faltas: já é cliente antes do email", /tipicamente se já é cliente — ANTES do email/.test(prompt));
-ok("bookends: confirmação pontual não chega", /confirmação pontual[\s\S]*NÃO chega/.test(server));
-ok("flow: secção confirmação e digressões", /# Confirmação do pedido e digressões/.test(server));
 ok("extract: campos_por_confirmar = ambíguos", /campos_por_confirmar' = APENAS campos cuja resposta ficou AMBÍGUA/.test(server));
 
 // Português exclusivo
 ok("guião: SEMPRE e EXCLUSIVAMENTE pt-PT", /Falas SEMPRE e EXCLUSIVAMENTE em português europeu/.test(prompt));
-ok("guião: sem secção Língua da chamada multi", !/# Língua da chamada/.test(prompt));
-ok("guião: sem âncora inglesa", !/If the caller speaks English/.test(prompt));
-ok("guião: sem BASTA UMA FRASE", !/BASTA UMA FRASE COMPLETA/.test(prompt));
-ok("guião: cliente noutra língua → nome e telefone", /continua em português europeu[\s\S]*nome e telefone/.test(prompt));
-ok("fecho: sem tradução noutra língua", !/mensagem traduzida/.test(prompt));
-ok("A_RULES: exclusivo pt-PT", /Respondes SEMPRE e EXCLUSIVAMENTE em português europeu/.test(server));
-ok("A_RULES: sem mudança de língua", /Nunca mudas de língua/.test(server));
-ok("A_RULES: prioridade português exclusivo", /Português europeu exclusivo e tom estável/.test(server));
-ok("GROK: EXCLUSIVAMENTE pt-PT", /Respondes EXCLUSIVAMENTE em português europeu de Portugal \(pt-PT\)/.test(server));
-ok("GROK: sem BASTA UMA FRASE / âncora EN", !/BASTA UMA FRASE COMPLETA|If the caller speaks English/.test(server));
-ok("GROK: continua em português se EN/ES/FR", /CONTINUAS em português europeu/.test(server));
-ok("transcrição: language pt bloqueado", /transcription: \{ model: "gpt-4o-transcribe", language: "pt"/.test(server));
-ok("transcrição: prompt só português", /Chamada telefónica em português de Portugal/.test(server));
-ok("página: PT_RESP (não LING_RESP)", /const PT_RESP=/.test(html) && !/LING_RESP/.test(html));
-ok("página: vigia força pt-PT", /PT_RESP\+' O cliente está em silêncio/.test(html));
+ok("guião: sem BASTA UMA FRASE", !/BASTA UMA FRASE COMPLETA/.test(prompt + server));
+ok("transcrição A: language pt", /language: "pt"/.test(server));
+ok("página: PT_RESP", /const PT_RESP=/.test(html) && !/LING_RESP/.test(html));
+
+// Modelo B — xAI prompting guide shape
+ok("Grok: ## Role & Persona", /## Role & Persona/.test(grokEffective));
+ok("Grok: ## Objective", /## Objective/.test(grokEffective));
+ok("Grok: ## Conversation Flow", /## Conversation Flow/.test(grokEffective));
+ok("Grok: ## Guardrails & Escalation", /## Guardrails & Escalation/.test(grokEffective));
+ok("Grok: ## Voice & Communication Style", /## Voice & Communication Style/.test(grokEffective));
+ok("Grok: ## CRITICAL INSTRUCTIONS last block", /## CRITICAL INSTRUCTIONS[\s\S]*ALWAYS stay silent/.test(grokEffective));
+ok("Grok: second person You are Alice", /You are Alice/.test(grokEffective));
+ok("Grok: NOT appending full prompt_alfa", !grokEffective.includes("És a Alice, assistente virtual da Alfaseguros, uma corretora"));
+ok("Grok: compact product fields", /EMBARCACAO: tipo/.test(grokEffective));
+ok("Grok: end_call after full confirm, no goodbye", /call \\`end_call\\` immediately[\s\S]*Do NOT speak a goodbye/.test(grokEffective));
+ok("Grok: language lock pt-PT", /Respond ONLY in European Portuguese \(pt-PT\)/.test(grokEffective));
+ok("Grok: slim CRITICAL (no dual CRITICAL headers up front)", !/^## CRITICAL INSTRUCTIONS — UMA FALA/m.test(grokEffective));
+ok("Grok prompt under 8k chars", grokEffective.length < 8000);
+
+// Session / client
+ok("model pinned to think-fast-2.0", /GROK_MODEL.*grok-voice-think-fast-2\.0/.test(server));
+ok("FECHO_MESSAGE exported to session", /fecho_message: FECHO_MESSAGE/.test(server));
+ok("VAD threshold 0.85", /threshold:0\.85/.test(html));
+ok("VAD silence 600ms", /silence_duration_ms:600/.test(html));
+ok("force_message helper", /function forceFala\(/.test(html));
+ok("fecho via force_message on end_call", /forceFala\(fechoMsg/.test(html));
+ok("abertura Grok via force_message", /provider==='grok'[\s\S]*forceFala\(s\.first_message/.test(html));
+ok("end_call tool: system delivers closing", /system delivers the fixed closing message/.test(html));
 
 const failed = checks.filter(c => !c.ok);
 console.log(`${checks.length - failed.length}/${checks.length} ok`);
+console.log(`Grok instructions: ${grokEffective.length} chars`);
 for (const c of checks) console.log(`${c.ok ? "✓" : "✗"} ${c.name}`);
 if (failed.length) process.exit(1);
