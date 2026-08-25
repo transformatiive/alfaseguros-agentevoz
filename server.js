@@ -19,7 +19,7 @@ const RESULT_WEBHOOK = process.env.RESULT_WEBHOOK || "https://trnsf.up.railway.a
 const XAI_API_KEY = process.env.XAI_API_KEY;
 const XAI_BASE = process.env.XAI_BASE || "https://api.x.ai";
 const GROK_MODEL = process.env.GROK_MODEL || "grok-voice-think-fast-2.0"; // pin: latest flutua de preço/comportamento
-const GROK_VOICE = process.env.GROK_VOICE || "carina"; // carina: melhor pt-PT; eve tende a pt-BR
+const GROK_VOICE = process.env.GROK_VOICE || "eve";
 const PROMPT = fs.readFileSync(path.join(__dirname, "prompt_alfa.md"), "utf8");
 const FIRST_MESSAGE = "Olá, fala a Alice, assistente virtual da Alfaseguros. Os nossos consultores não conseguiram atender neste momento. Posso registar o seu pedido para que um consultor o contacte. Esta chamada é gravada. Em que posso ajudar?";
 const FECHO_MESSAGE = "Obrigada, o seu pedido ficou registado com os dados necessários. A partir daqui, um consultor da Alfaseguros vai analisar o seu caso e procurar as opções mais adequadas para lhe apresentar a melhor proposta. Da sua parte, não precisa de fazer mais nada. Entraremos em contacto consigo até ao final do próximo dia útil. Obrigada por confiar na Alfaseguros!";
@@ -113,27 +113,19 @@ const A_RULES = `# Papel e objetivo
 
 const INSTRUCTIONS = A_RULES + PROMPT + CALL_BOOKENDS;
 
-// xAI Grok: prompt em português europeu + guião completo — o stack inglês compacto (#29)
-// fazia o modelo derivar para pt-BR (Grok auto-detecta língua e tende para variantes brasileiras).
-const GROK_CALL_BOOKENDS = `
-# Início da chamada
-A abertura é entregue pelo sistema — começa na primeira resposta do cliente.
-
-# Terminar a chamada (Modelo B)
-Só podes chamar end_call DEPOIS de o cliente confirmar o resumo COMPLETO ("Está correto?" + sim explícito ao pedido inteiro). NÃO digas a despedida nem a frase de fecho — o sistema entrega-a automaticamente. Chama end_call logo após a confirmação. Se o cliente se desviou durante a confirmação, trata a digressão e volta a pedir "Está correto?" sobre o resumo antes de end_call.
-`;
-
-const GROK_INSTRUCTIONS = `## CRITICAL INSTRUCTIONS — LÍNGUA
-Respondes EXCLUSIVAMENTE em português europeu de Portugal (pt-PT). NUNCA uses português do Brasil — nem vocabulário, nem gramática, nem construções. NUNCA mudas de língua.
-Formas OBRIGATÓRIAS: telemóvel, autocarro, está a fazer, ecrã, registei, morada, apólice, matrícula, pequeno-almoço, carta de condução, código postal, consultor.
-Formas PROIBIDAS: celular, ônibus, está fazendo, tela, registrei, você, tu, a gente, bacana, legal (interjeição), assistente (para humanos — usa sempre "consultor").
-Se o cliente falar com palavras ou construções brasileiras, respondes SEMPRE em pt-PT europeu: o português do Brasil não é outra língua.
-Se o cliente falar consistentemente em inglês, espanhol ou francês, CONTINUAS em português europeu: diz numa frase curta que esta linha atende em português e recolhe nome e telefone para um consultor ligar de volta. NÃO faças a chamada completa noutra língua.
-
-## CRITICAL INSTRUCTIONS — UMA FALA DE CADA VEZ
+// xAI Grok: stack português completo (pré-#29). O #29 compacto alterou tom/sotaque sem necessidade;
+// o único problema reportado eram cortes a meio da fala — corrigido no cliente com VAD 0.85/600.
+const GROK_INSTRUCTIONS = `## CRITICAL INSTRUCTIONS — UMA FALA DE CADA VEZ
 Depois de falares, CALAS-TE até o cliente responder. NUNCA produces duas falas seguidas.
 NUNCA re-resumas o pedido ("Percebi que pretende…") depois de já teres respondido e feito uma pergunta.
 NUNCA inicies uma resposta com "Entendido", "Perfeito", "Compreendo" ou "Percebi que" — classifica ou pergunta directamente (ex.: "É um seguro multirriscos para condomínio…", nunca "Percebi que é para um seguro novo").
+
+## CRITICAL INSTRUCTIONS — LÍNGUA
+Respondes EXCLUSIVAMENTE em português europeu de Portugal (pt-PT). NUNCA uses português do Brasil — nem vocabulário, nem gramática, nem construções. NUNCA mudas de língua.
+Formas OBRIGATÓRIAS: telemóvel, autocarro, está a fazer, ecrã, registei, morada, apólice, matrícula, pequeno-almoço, carta de condução, código postal, consultor.
+Formas PROIBIDAS: celular, ônibus, está fazendo, tela, registrei, você, assistente (para humanos — usa sempre "consultor").
+Se o cliente falar com palavras ou construções brasileiras, respondes SEMPRE em pt-PT europeu: o português do Brasil não é outra língua.
+Se o cliente falar consistentemente em inglês, espanhol ou francês, CONTINUAS em português europeu: diz numa frase curta que esta linha atende em português e recolhe nome e telefone para um consultor ligar de volta. NÃO faças a chamada completa noutra língua.
 
 ## Voice & Communication Style
 - Palavra falada apenas: frases curtas, uma ou duas por turno.
@@ -141,7 +133,7 @@ NUNCA inicies uma resposta com "Entendido", "Perfeito", "Compreendo" ou "Percebi
 - Assistente feminina: "Obrigada", nunca "Obrigado".
 - Uma pergunta de cada vez; depois de "Está correto?", calas-te e esperas.
 
-` + FLOW_RULES + PROMPT + GROK_CALL_BOOKENDS;
+` + FLOW_RULES + PROMPT + CALL_BOOKENDS;
 
 const VOICES = ["marin", "cedar", "coral", "sage", "shimmer", "alloy", "ash", "ballad", "echo", "verse"];
 
