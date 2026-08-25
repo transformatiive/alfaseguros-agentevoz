@@ -1,5 +1,5 @@
 <!doctype html><html lang="pt"><head><meta charset="utf-8">
-<title>Alfa — Assistente Virtual Alfaseguros</title>
+<title>Alice — Assistente Virtual Alfaseguros</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#f47920">
 <link rel="icon" href="logo_alfa.svg" type="image/svg+xml">
@@ -68,8 +68,8 @@ footer a{color:var(--bordeaux);font-weight:600;text-decoration:none}
     <img src="logo_alfa.svg" alt="Alfaseguros">
     <small>Assistente Virtual</small>
   </header>
-  <h1>Fale com a <em>Alfa</em></h1>
-  <p class="sub">A Alfa regista o seu pedido e um consultor da Alfaseguros liga-lhe de volta até ao próximo dia útil.</p>
+  <h1>Fale com a <em>Alice</em></h1>
+  <p class="sub">A Alice regista o seu pedido e um consultor da Alfaseguros liga-lhe de volta até ao próximo dia útil.</p>
   <div class="vers" id="vers">
     <button class="sel" data-p="openai">Versão A</button>
     <button data-p="grok">Versão B</button>
@@ -184,13 +184,13 @@ function handleEvent(ev){
   }
   if((ev.type==='response.output_audio.delta'||ev.type==='response.audio.delta')&&ev.delta&&provider==='grok') playDelta(ev.delta);
   if(ev.type==='input_audio_buffer.speech_started'&&provider==='grok'){
-    if(!alfaAFalar()){diag.falsosVad++;return;} // VAD disparou mas a Alfa já tinha acabado — eco/ruído, ignorar
+    if(!alfaAFalar()){diag.falsosVad++;return;} // VAD disparou mas a Alice já tinha acabado — eco/ruído, ignorar
     userFalou=true;turno='user';
     clearTimeout(vadDebounce);
     vadDebounce=setTimeout(cortarPlaybackGrok,VAD_DEBOUNCE_MS); // debounce evita cortes por ruído breve
   }
   if(ev.type==='input_audio_buffer.speech_stopped'&&provider==='grok'){clearTimeout(vadDebounce);vadDebounce=null;}
-  if(ev.type==='input_audio_buffer.speech_started'&&provider==='openai'&&oaiAFalar){diag.cortes++;} // interrupção (voz/ruído) com a Alfa a falar
+  if(ev.type==='input_audio_buffer.speech_started'&&provider==='openai'&&oaiAFalar){diag.cortes++;} // interrupção (voz/ruído) com a Alice a falar
   if(provider==='openai'&&ev.type==='output_audio_buffer.cleared'){oaiAFalar=false;}
   if(ev.type==='response.done'&&provider==='grok'){respAudioAtiva=false;}
   // Sem injeção de lembretes por turno em nenhuma das versões: o sotaque e o
@@ -199,19 +199,19 @@ function handleEvent(ev){
   // re-confirmações, e é contrário à recomendação da OpenAI.
   if(ev.type==='response.function_call_arguments.done'&&ev.name==='end_call'){
     sendEvent({type:'conversation.item.create',item:{type:'function_call_output',call_id:ev.call_id,output:'{"ok":true}'}});
-    ending=true;st.textContent='A Alfa está a despedir-se…';
+    ending=true;st.textContent='A Alice está a despedir-se…';
     clearTimeout(endTimer);endTimer=setTimeout(stop,20000); // salvaguarda: nunca fica pendurado
     if(provider==='grok'){setTimeout(aguardarFimDoAudio,1200);} // cobre despedida já dita antes do end_call
     else{setTimeout(()=>{if(active&&ending&&!oaiAFalar)stop();},4000);}
   }
-  // terminar só depois de a Alfa acabar mesmo de falar
+  // terminar só depois de a Alice acabar mesmo de falar
   if(provider==='openai'&&ev.type==='output_audio_buffer.started'){oaiAFalar=true;}
   if(provider==='openai'&&ev.type==='output_audio_buffer.stopped'){oaiAFalar=false;if(ending){clearTimeout(endTimer);setTimeout(stop,500);}}
   if(ending&&provider==='grok'&&ev.type==='response.done'){aguardarFimDoAudio();}
   if(ev.type==='error'){st.textContent='Ocorreu um problema na chamada.';}
 }
 async function manterEcra(){try{wake&&await wake.release();}catch(_){} try{wake=await navigator.wakeLock.request('screen');}catch(_){}}
-function vigiaSilencio(){ // 5s sem ninguém falar => a Alfa retoma; à 3ª vez despede-se e regista (12s se à espera de confirmação)
+function vigiaSilencio(){ // 5s sem ninguém falar => a Alice retoma; à 3ª vez despede-se e regista (12s se à espera de confirmação)
   clearInterval(silTimer);
   silTimer=setInterval(()=>{
     if(!active||ending)return;
@@ -292,7 +292,7 @@ async function ligarGrok(s,retoma){
       micSrc=actx.createMediaStreamSource(stream);
       micProc=actx.createScriptProcessor(4096,1,1);
       micProc.onaudioprocess=e=>{if(ws&&ws.readyState===1){
-        if(alfaAFalar())return; // não enviar mic enquanto Alfa fala (reduz eco que dispara VAD)
+        if(alfaAFalar())return; // não enviar mic enquanto Alice fala (reduz eco que dispara VAD)
         const f=resample(e.inputBuffer.getChannelData(0),actx.sampleRate,24000);
         ws.send(JSON.stringify({type:'input_audio_buffer.append',audio:f32ToB64(f)}));}};
       const mute=actx.createGain();mute.gain.value=0;

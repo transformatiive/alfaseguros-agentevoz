@@ -1,5 +1,5 @@
 # alfa-voz-openai
-Teste web da assistente "Alfa" (Alfaseguros) com OpenAI Realtime (gpt-realtime-2.1, voz Marin) por WebRTC.
+Teste web da assistente "Alice" (Alfaseguros) com OpenAI Realtime (gpt-realtime-2.1, voz Marin) por WebRTC.
 Mesmo prompt e mesma estrutura de dados que o agente ElevenLabs.
 
 ## Correr
