@@ -37,7 +37,10 @@ ok("VAD silence 600ms (anti-cortes)", /silence_duration_ms:600/.test(html));
 ok("sem force_message", !/function forceFala\(/.test(html));
 ok("abertura via pedeResposta (Grok=A)", /A tua primeira fala é exatamente/.test(html) && !/forceFala\(s\.first_message/.test(html));
 ok("fecho pelo modelo (sem forceFala)", /cobre despedida já dita antes do end_call/.test(html));
-ok("transcrição Grok: language_hint pt-PT", /language_hint:'pt-PT'/.test(html));
+ok("código postal: completo numa frase", /três mil traço quinhentos.*3000-500/.test(prompt));
+ok("código postal: nunca colega se cliente deu", /NUNCA digas "um colega confirma" quando o cliente já deu o código postal/.test(prompt));
+ok("FLOW_RULES: código postal completo", /três mil traço quinhentos/.test(server));
+ok("se souber depois do CP", /SÓ DEPOIS de cada campo obrigatório/.test(prompt));
 
 const failed = checks.filter(c => !c.ok);
 console.log(`${checks.length - failed.length}/${checks.length} ok`);
