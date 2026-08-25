@@ -1,4 +1,4 @@
-// Alfa (Alfaseguros) - teste web com OpenAI Realtime (gpt-realtime-2.1) por WebRTC.
+// Alice (Alfaseguros) - teste web com OpenAI Realtime (gpt-realtime-2.1) por WebRTC.
 // Endpoints: GET / (página), POST /api/session (token efémero), POST /api/extract (resumo + campos no fim da chamada)
 import express from "express";
 import fs from "node:fs";
@@ -21,7 +21,7 @@ const XAI_BASE = process.env.XAI_BASE || "https://api.x.ai";
 const GROK_MODEL = process.env.GROK_MODEL || "grok-voice-latest";
 const GROK_VOICE = process.env.GROK_VOICE || "eve";
 const PROMPT = fs.readFileSync(path.join(__dirname, "prompt_alfa.md"), "utf8");
-const FIRST_MESSAGE = "Olá, fala a Alfa, assistente virtual da Alfaseguros. Os nossos consultores não conseguiram atender neste momento. Posso registar o seu pedido para que um consultor o contacte. Esta chamada é gravada. Em que posso ajudar?";
+const FIRST_MESSAGE = "Olá, fala a Alice, assistente virtual da Alfaseguros. Os nossos consultores não conseguiram atender neste momento. Posso registar o seu pedido para que um consultor o contacte. Esta chamada é gravada. Em que posso ajudar?";
 
 const FLOW_RULES = `# Tratamento do cliente (neutro quanto ao género, prioridade máxima)
 - NUNCA assumas o género do cliente a partir do nome, da voz ou de qualquer outro indício.
@@ -57,10 +57,10 @@ A tua primeira fala é exatamente: "${FIRST_MESSAGE}"
 Só podes chamar a ferramenta end_call DEPOIS de cumprir os três passos: (a) confirmaste o pedido com o cliente e ele disse que está correto, (b) disseste a frase de fecho completa, (c) o cliente se despediu ou ficou em silêncio. Nunca termines a chamada antes da confirmação.
 `;
 
-const TRANSCRIPTION_PROMPT = "Chamada telefónica em português de Portugal para a Alfaseguros, corretora de seguros. Termos frequentes: Alfaseguros, apólice, sinistro, multirriscos, condomínio, frações, TVDE, matrícula, código postal, NIF, telemóvel, morada, carta de condução, danos próprios, responsabilidade civil, simulação, consultor. Aparecem nomes próprios portugueses, moradas e endereços de email.";
+const TRANSCRIPTION_PROMPT = "Chamada telefónica em português de Portugal para a Alfaseguros, corretora de seguros. Termos frequentes: Alice, Alfaseguros, apólice, sinistro, multirriscos, condomínio, frações, TVDE, matrícula, código postal, NIF, telemóvel, morada, carta de condução, danos próprios, responsabilidade civil, simulação, consultor. Aparecem nomes próprios portugueses, moradas e endereços de email.";
 
 const A_RULES = `# Papel e objetivo
-És a Alfa, assistente virtual da Alfaseguros, corretora de seguros em Portugal. Atendes as chamadas que os consultores não conseguiram atender: percebes o pedido, recolhes os dados mínimos e garantes que um consultor liga de volta. Não vendes, não aconselhas e não dás preços.
+És a Alice, assistente virtual da Alfaseguros, corretora de seguros em Portugal. Atendes as chamadas que os consultores não conseguiram atender: percebes o pedido, recolhes os dados mínimos e garantes que um consultor liga de volta. Não vendes, não aconselhas e não dás preços.
 
 # Voz e sotaque
 - Português europeu de Portugal, sotaque padrão de Lisboa.
@@ -199,11 +199,11 @@ const SCHEMA = {
   },
   required: ["categoria","produto","nome_cliente","telefone","email","nif","cliente_existente","dados_recolhidos","campos_por_confirmar","campos_em_falta","quer_humano","prioridade","resumo","proximo_passo","mencionou_dados_saude"]
 };
-const EXTRACT_PROMPT = `Extrai, a partir da transcrição de uma chamada entre a assistente virtual Alfa (Alfaseguros) e um cliente, os campos pedidos. Regras: 'dados_recolhidos' em formato 'campo: valor; campo: valor'. PROIBIDO incluir qualquer informação de saúde, doenças, medicação ou deficiências em qualquer campo; se o cliente a mencionou, marca mencionou_dados_saude=true e escreve no resumo apenas 'cliente mencionou informação de saúde, a recolher por humano'. 'campos_em_falta' = campos obrigatórios do produto que o cliente não soube. 'produto' usa os códigos: AUTOMOVEL, MULTIRRISCOS_HABITACAO, MULTIRRISCOS_CONDOMINIO, MULTIRRISCOS_EMPRESARIAL, SAUDE, TVDE, ACIDENTES_TRABALHO_INDIVIDUAL, ACIDENTES_TRABALHO_COLETIVO, RC_GERAL, RC_CONSTRUCAO, RC_EMPRESARIAL, RC_MEDICOS, RC_ARMAS_CACADOR, OBRAS_MONTAGENS, ANIMAIS, BICICLETAS_TROTINETAS, VIAGEM, EMBARCACAO, ACIDENTES_PESSOAIS (ou "" se não for simulação). 'quer_humano' só é true se o cliente pediu EXPLICITAMENTE para falar com uma pessoa; um colega ligar de volta é o fluxo normal e NÃO conta. 'prioridade' alta se sinistro urgente, pedido sem resposta, cliente irritado ou quer_humano=true. Resumo em 2 a 4 frases, português europeu, para um consultor humano. Campos vazios = "".`;
+const EXTRACT_PROMPT = `Extrai, a partir da transcrição de uma chamada entre a assistente virtual Alice (Alfaseguros) e um cliente, os campos pedidos. Regras: 'dados_recolhidos' em formato 'campo: valor; campo: valor'. PROIBIDO incluir qualquer informação de saúde, doenças, medicação ou deficiências em qualquer campo; se o cliente a mencionou, marca mencionou_dados_saude=true e escreve no resumo apenas 'cliente mencionou informação de saúde, a recolher por humano'. 'campos_em_falta' = campos obrigatórios do produto que o cliente não soube. 'produto' usa os códigos: AUTOMOVEL, MULTIRRISCOS_HABITACAO, MULTIRRISCOS_CONDOMINIO, MULTIRRISCOS_EMPRESARIAL, SAUDE, TVDE, ACIDENTES_TRABALHO_INDIVIDUAL, ACIDENTES_TRABALHO_COLETIVO, RC_GERAL, RC_CONSTRUCAO, RC_EMPRESARIAL, RC_MEDICOS, RC_ARMAS_CACADOR, OBRAS_MONTAGENS, ANIMAIS, BICICLETAS_TROTINETAS, VIAGEM, EMBARCACAO, ACIDENTES_PESSOAIS (ou "" se não for simulação). 'quer_humano' só é true se o cliente pediu EXPLICITAMENTE para falar com uma pessoa; um colega ligar de volta é o fluxo normal e NÃO conta. 'prioridade' alta se sinistro urgente, pedido sem resposta, cliente irritado ou quer_humano=true. Resumo em 2 a 4 frases, português europeu, para um consultor humano. Campos vazios = "".`;
 
 app.post("/api/extract", async (req, res) => {
   try {
-    const transcript = (req.body.transcript || []).map(t => `${t.role === "user" ? "CLIENTE" : "ALFA"}: ${t.text}`).join("\n");
+    const transcript = (req.body.transcript || []).map(t => `${t.role === "user" ? "CLIENTE" : "ALICE"}: ${t.text}`).join("\n");
     const r = await fetch(`${OPENAI_BASE}/v1/responses`, {
       method: "POST",
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
