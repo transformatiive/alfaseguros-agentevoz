@@ -71,8 +71,8 @@ footer a{color:var(--bordeaux);font-weight:600;text-decoration:none}
   <h1>Fale com a <em>Alice</em></h1>
   <p class="sub">A Alice regista o seu pedido e um consultor da Alfaseguros liga-lhe de volta até ao próximo dia útil.</p>
   <div class="vers" id="vers">
-    <button class="sel" data-p="openai">Versão A</button>
-    <button data-p="grok">Versão B</button>
+    <button class="sel" data-p="grok">SpaceX.ai Grok Live 2</button>
+    <button data-p="eleven">ElevenLabs Agents</button>
   </div>
   <div class="dial" id="dial">
     <span class="anel"></span><span class="anel"></span>
@@ -94,15 +94,13 @@ footer a{color:var(--bordeaux);font-weight:600;text-decoration:none}
 const btn=document.getElementById('btn'),dial=document.getElementById('dial'),st=document.getElementById('status'),
 conversa=document.getElementById('conversa'),registo=document.getElementById('registo'),campos=document.getElementById('campos'),
 aguarde=document.getElementById('aguarde'),audioEl=document.getElementById('audio'),vers=document.getElementById('vers');
-let pc,dc,ws,stream,actx,micSrc,micProc,transcript=[],active=false,reconnects=0,wake,discoTimer,provider='openai',playT=0,playSources=[],userLines={},ending=false,endTimer,oaiAFalar=false,outGain,outDest,respAudioAtiva=false,diag={underruns:0,cortes:0,falsosVad:0,dobresResp:0},
-bufLead=0.45,lastAct=0,nudges=0,silTimer,arranque=null,arranqueTimer,respPend=0,updPend=0,vadDebounce=null,aguardaConfirmacao=false,micGateUntil=0,turno=null,userFalou=false,respPropria=false,destravas=0;
+let pc,dc,ws,stream,actx,micSrc,micProc,transcript=[],active=false,reconnects=0,wake,discoTimer,provider='grok',playT=0,playSources=[],userLines={},ending=false,endTimer,oaiAFalar=false,outGain,outDest,respAudioAtiva=false,diag={underruns:0,cortes:0,falsosVad:0,dobresResp:0},
+bufLead=0.45,lastAct=0,nudges=0,silTimer,arranque=null,arranqueTimer,respPend=0,updPend=0,vadDebounce=null,aguardaConfirmacao=false,micGateUntil=0,turno=null,userFalou=false,respPropria=false,destravas=0,convId=null;
 const SILENCIO_MS=5000,SILENCIO_CONFIRMACAO_MS=12000,VAD_DEBOUNCE_MS=250,MIC_GATE_TAIL_MS=350;
 const vozTeste=new URLSearchParams(location.search).get('voz');
-const VOZES_A=['marin','cedar','coral','sage','shimmer','alloy','ash','ballad','echo','verse'];
-if(vozTeste&&!VOZES_A.includes(vozTeste)){ // voz que não é da Versão A => pré-seleciona a Versão B
-  provider='grok';
-  vers.querySelectorAll('button').forEach(x=>x.classList.toggle('sel',x.dataset.p==='grok'));
-}
+// A Versão A (OpenAI Realtime) continua a existir no servidor mas saiu do seletor: abre-se com ?motor=openai.
+const motorUrl=new URLSearchParams(location.search).get('motor');
+if(motorUrl==='openai')provider='openai';
 const CAT={SIMULACAO:'Simulação',GESTAO_APOLICE:'Gestão de apólice',SINISTRO:'Sinistro',CANCELAMENTO:'Cancelamento',PEDIDO_SEM_RESPOSTA:'Pedido sem resposta',OUTRO:'Outro'};
 const PROD={AUTOMOVEL:'Automóvel',MULTIRRISCOS_HABITACAO:'Multirriscos Habitação',MULTIRRISCOS_CONDOMINIO:'Multirriscos Condomínio',MULTIRRISCOS_EMPRESARIAL:'Multirriscos Empresarial',SAUDE:'Saúde',TVDE:'TVDE',ACIDENTES_TRABALHO_INDIVIDUAL:'Acidentes de Trabalho — Individual',ACIDENTES_TRABALHO_COLETIVO:'Acidentes de Trabalho — Coletivo',RC_GERAL:'Responsabilidade Civil Geral',RC_CONSTRUCAO:'RC Construção',RC_EMPRESARIAL:'RC Empresarial',RC_MEDICOS:'RC Médicos',RC_ARMAS_CACADOR:'RC Armas / Caçador',OBRAS_MONTAGENS:'Obras e Montagens',ANIMAIS:'Animais de Companhia',BICICLETAS_TROTINETAS:'Bicicletas e Trotinetas',VIAGEM:'Viagem',EMBARCACAO:'Embarcação',ACIDENTES_PESSOAIS:'Acidentes Pessoais'};
 const LING_RESP='Responde na língua em que a conversa está a decorrer; se ainda for português, português europeu de Portugal (pt-PT), nunca vocabulário brasileiro. Uma só fala — cala-te a seguir e espera pelo cliente.';
@@ -116,7 +114,7 @@ function novaLinha(role,text){
 }
 function linha(role,text){novaLinha(role,text);transcript.push({role,text});}
 function isConfirmacao(text){const t=text.toLowerCase();return/\bestá correto\??|\besta correto\??|\bcorreto\?\s*$/.test(t);}
-function alfaAFalar(){return provider==='grok'?(playSources.length>0||respAudioAtiva||Date.now()<micGateUntil):oaiAFalar;}
+function alfaAFalar(){return provider==='openai'?oaiAFalar:(playSources.length>0||respAudioAtiva||Date.now()<micGateUntil);}
 function linhaUser(id,text){ // transcrição cumulativa (xAI envia .updated); atualiza a mesma linha
   if(!id){linha('user',text);return;}
   const u=userLines[id];
@@ -125,6 +123,7 @@ function linhaUser(id,text){ // transcrição cumulativa (xAI envia .updated); a
   conversa.scrollTop=conversa.scrollHeight;
 }
 function sendEvent(o){const j=JSON.stringify(o);
+  if(provider==='eleven')return; // a ElevenLabs conduz o turno do lado dela: não aceita eventos deste formato
   if(provider==='grok'){if(ws&&ws.readyState===1)ws.send(j);}
   else{if(dc&&dc.readyState==='open')dc.send(j);}}
 function b64ToF32(b64){const bin=atob(b64),n=bin.length>>1,u8=new Uint8Array(bin.length);
@@ -140,8 +139,8 @@ function resample(f,from,to){if(from===to)return f;
   const r=from/to,n=Math.floor(f.length/r),out=new Float32Array(n);
   for(let i=0;i<n;i++){const x=i*r,i0=Math.floor(x),i1=Math.min(i0+1,f.length-1);out[i]=f[i0]+(f[i1]-f[i0])*(x-i0);}
   return out;}
-function playDelta(b64){const f=b64ToF32(b64);if(!f.length||!actx)return;
-  const buf=actx.createBuffer(1,f.length,24000);buf.getChannelData(0).set(f);
+function playDelta(b64,rate){const f=b64ToF32(b64);if(!f.length||!actx)return;
+  const buf=actx.createBuffer(1,f.length,rate||24000);buf.getChannelData(0).set(f);
   const src=actx.createBufferSource();src.buffer=buf;src.connect(outGain);
   const now=actx.currentTime;
   if(playT<=now+0.02){ // fila vazia: amortecedor adaptativo contra oscilação de rede (TCP)
@@ -192,6 +191,7 @@ function handleEvent(ev){
   if(ev.type==='input_audio_buffer.speech_stopped'&&provider==='grok'){clearTimeout(vadDebounce);vadDebounce=null;}
   if(ev.type==='input_audio_buffer.speech_started'&&provider==='openai'&&oaiAFalar){diag.cortes++;} // interrupção (voz/ruído) com a Alice a falar
   if(provider==='openai'&&ev.type==='output_audio_buffer.cleared'){oaiAFalar=false;}
+  if(ev.type==='conversation.created'&&ev.conversation&&ev.conversation.id)convId=ev.conversation.id; // guardado para diagnóstico e para a retoma nativa quando a xAI a confirmar
   if(ev.type==='response.done'&&provider==='grok'){respAudioAtiva=false;}
   // Sem injeção de lembretes por turno em nenhuma das versões: o sotaque e o
   // turno vivem nas instruções da sessão (ver A_RULES/GROK_INSTRUCTIONS no
@@ -215,6 +215,7 @@ function vigiaSilencio(){ // 5s sem ninguém falar => a Alice retoma; à 3ª vez
   clearInterval(silTimer);
   silTimer=setInterval(()=>{
     if(!active||ending)return;
+    if(provider==='eleven')return; // a ElevenLabs conduz o turno do lado dela; um aviso nosso aqui não chegaria a lado nenhum
     if(alfaAFalar())return;
     const limiteSilencio=aguardaConfirmacao?SILENCIO_CONFIRMACAO_MS:SILENCIO_MS;
     if(respPend&&turno==='user'&&Date.now()-respPend>4000){ // o cliente falou e não veio resposta: destrava (segmento preso no servidor)
@@ -273,13 +274,16 @@ async function ligarGrok(s,retoma){
   if(!outGain){outGain=actx.createGain();outDest=actx.createMediaStreamDestination();outGain.connect(outDest);}
   audioEl.srcObject=outDest.stream;audioEl.play().catch(()=>{}); // reprodução via elemento áudio => cancelamento de eco do browser aplica-se
   await new Promise((ok,ko)=>{
+    // A retoma nativa por conversation_id fica de fora: a xAI documenta resumption.enabled, mas não o ecoa
+    // no session.updated (probe de 25/08), por isso o histórico continua a ser reposto por nós na reconexão.
     ws=new WebSocket(s.ws_url,['xai-client-secret.'+s.client_secret]);
     ws.onopen=()=>{
       updPend=s.voice?2:1; // a primeira fala espera pela confirmação do ÚLTIMO update
       if(s.voice) ws.send(JSON.stringify({type:'session.update',session:{voice:s.voice}})); // voz em separado: nunca pode arrastar as instruções
       ws.send(JSON.stringify({type:'session.update',session:{
         instructions:s.instructions,
-        turn_detection:{type:'server_vad',threshold:0.9,silence_duration_ms:700,prefix_padding_ms:333},
+        turn_detection:{type:'server_vad',threshold:0.9,silence_duration_ms:700,prefix_padding_ms:333,idle_timeout_ms:15000}, // idle_timeout_ms: rede de segurança do lado do servidor, acima da nossa vigia de 5s — apanha os segmentos
+        // presos em que o response.create do browser não chega a produzir fala (a causa das paragens da Versão B)
         reasoning:{effort:'none'},
         // language_hint é uma sugestão, não um bloqueio: mantém a qualidade do pt-PT (a esmagadora maioria
         // das chamadas) sem impedir o reconhecimento de outra língua. Confirmar em teste com uma chamada em inglês.
@@ -306,12 +310,57 @@ async function ligarGrok(s,retoma){
     ws.onclose=()=>{if(active){clearTimeout(discoTimer);discoTimer=setTimeout(()=>{if(active)retomar();},1200);}};
   });
 }
+const ELEVEN_RATE=16000; // pcm_16000 nos dois sentidos (formato por omissão dos ElevenLabs Agents)
+function handleEleven(ev){
+  if(ev.type==='ping'){ if(ws&&ws.readyState===1) ws.send(JSON.stringify({type:'pong',event_id:ev.ping_event&&ev.ping_event.event_id})); return; }
+  if(ev.type==='audio'&&ev.audio_event&&ev.audio_event.audio_base_64){ playDelta(ev.audio_event.audio_base_64,ELEVEN_RATE); marcaAtividade(); return; }
+  if(ev.type==='interruption'){ diag.cortes++; stopPlayback(); return; }
+  if(ev.type==='user_transcript'&&ev.user_transcription_event){
+    const t=(ev.user_transcription_event.user_transcript||'').trim();
+    if(t){ linha('user',t); marcaAtividade(); }
+    return;
+  }
+  if(ev.type==='agent_response'&&ev.agent_response_event){
+    const t=(ev.agent_response_event.agent_response||'').trim();
+    if(t){ linha('assistant',t); marcaAtividade(); }
+    return;
+  }
+}
+async function ligarEleven(s){
+  actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+  await actx.resume();playT=0;respAudioAtiva=false;
+  if(!outGain){outGain=actx.createGain();outDest=actx.createMediaStreamDestination();outGain.connect(outDest);}
+  audioEl.srcObject=outDest.stream;audioEl.play().catch(()=>{});
+  await new Promise((ok,ko)=>{
+    ws=new WebSocket(s.ws_url); // URL já assinado pelo servidor; a chave nunca chega ao browser
+    ws.onopen=()=>{
+      ws.send(JSON.stringify({type:'conversation_initiation_client_data'}));
+      micSrc=actx.createMediaStreamSource(stream);
+      micProc=actx.createScriptProcessor(4096,1,1);
+      micProc.onaudioprocess=e=>{if(ws&&ws.readyState===1){
+        if(alfaAFalar())return; // mesmo travão de eco da Versão B
+        const f=resample(e.inputBuffer.getChannelData(0),actx.sampleRate,ELEVEN_RATE);
+        ws.send(JSON.stringify({user_audio_chunk:f32ToB64(f)}));}};
+      const mute=actx.createGain();mute.gain.value=0;
+      micSrc.connect(micProc);micProc.connect(mute);mute.connect(actx.destination);
+      marcaAtividade();
+      ok();
+    };
+    ws.onerror=()=>ko(new Error('ws'));
+    ws.onmessage=e=>{try{handleEleven(JSON.parse(e.data));}catch(_){}};
+    ws.onclose=()=>{if(active){clearTimeout(discoTimer);discoTimer=setTimeout(()=>{if(active)retomar();},1200);}};
+  });
+}
 async function ligar(retoma){
   const s=await (await fetch('/api/session',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(Object.assign({provider},vozTeste?{voice:vozTeste}:{}))})).json();
-  if(!s.client_secret) throw new Error('sem sessão');
+  if(s.error) throw new Error(s.error);
+  if(s.provider!=='eleven'&&!s.client_secret) throw new Error('sem sessão');
+  if(s.provider==='eleven'&&!s.ws_url) throw new Error('sem sessão');
   if(!stream) stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-  if(s.provider==='grok') await ligarGrok(s,retoma); else await ligarOpenAI(s,retoma);
+  if(s.provider==='eleven') await ligarEleven(s);
+  else if(s.provider==='grok') await ligarGrok(s,retoma);
+  else await ligarOpenAI(s,retoma);
 }
 btn.onclick=()=>active?stop():start();
 async function start(){
@@ -342,7 +391,7 @@ async function retomar(){
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'&&active){
     manterEcra();audioEl.play().catch(()=>{});actx&&actx.resume();
-    const morto=provider==='grok'?(!ws||ws.readyState!==1):(pc&&pc.connectionState!=='connected');
+    const morto=provider==='openai'?(pc&&pc.connectionState!=='connected'):(!ws||ws.readyState!==1);
     if(morto)retomar();
   }
 });
