@@ -16,9 +16,12 @@ const REALTIME_MODEL = process.env.REALTIME_MODEL || "gpt-realtime-2.1";
 const VOICE = process.env.VOICE || "marin";
 const TEXT_MODEL = process.env.TEXT_MODEL || "gpt-5.4-mini";
 const RESULT_WEBHOOK = process.env.RESULT_WEBHOOK || "https://trnsf.up.railway.app/webhook/alfa-voz-resultado"; // n8n: envia o resultado por email; vazio ("") desativa
+const ELEVEN_API_KEY = process.env.ELEVENLABS_API_KEY;
+const ELEVEN_AGENT_ID = process.env.ELEVENLABS_AGENT_ID;
+const ELEVEN_BASE = process.env.ELEVENLABS_BASE || "https://api.elevenlabs.io";
 const XAI_API_KEY = process.env.XAI_API_KEY;
 const XAI_BASE = process.env.XAI_BASE || "https://api.x.ai";
-const GROK_MODEL = process.env.GROK_MODEL || "grok-voice-latest";
+const GROK_MODEL = process.env.GROK_MODEL || "grok-voice-think-fast-2.0"; // fixado: "latest" muda debaixo dos pés
 const GROK_VOICE = process.env.GROK_VOICE || "eve";
 const PROMPT = fs.readFileSync(path.join(__dirname, "prompt_alfa.md"), "utf8");
 const FIRST_MESSAGE = "Olá, fala a Alice, assistente virtual da Alfaseguros. Os nossos consultores não conseguiram atender neste momento. Posso registar o seu pedido para que um consultor o contacte. Esta chamada é gravada. Em que posso ajudar?";
@@ -163,6 +166,20 @@ export const sessionConfig = (voice = VOICE) => ({
 
 app.post("/api/session", async (req, res) => {
   try {
+    if (req.body?.provider === "eleven") {
+      // ElevenLabs Agents: o guião, o LLM e a voz vivem no agente configurado no painel da ElevenLabs.
+      // O servidor só assina o URL — a chave nunca chega ao browser.
+      if (!ELEVEN_API_KEY || !ELEVEN_AGENT_ID) return res.status(503).json({ error: "elevenlabs indisponível: falta ELEVENLABS_API_KEY ou ELEVENLABS_AGENT_ID" });
+      const r = await fetch(`${ELEVEN_BASE}/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(ELEVEN_AGENT_ID)}`, {
+        headers: { "xi-api-key": ELEVEN_API_KEY }
+      });
+      const data = await r.json();
+      if (!r.ok) return res.status(r.status).json(data);
+      return res.json({
+        provider: "eleven", ws_url: data.signed_url, agent_id: ELEVEN_AGENT_ID,
+        model: "elevenlabs-agents", first_message: FIRST_MESSAGE
+      });
+    }
     if (req.body?.provider === "grok") {
       // xAI: o client secret não transporta configuração de sessão; o browser envia session.update depois de ligar.
       if (!XAI_API_KEY) return res.status(503).json({ error: "grok indisponível" });
@@ -235,6 +252,7 @@ app.post("/api/extract", async (req, res) => {
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
-app.get("/health", (_, res) => res.json({ ok: true, model: REALTIME_MODEL, voice: VOICE }));
+app.get("/health", (_, res) => res.json({ ok: true, model: REALTIME_MODEL, voice: VOICE,
+  motores: { grok: !!XAI_API_KEY, eleven: !!(ELEVEN_API_KEY && ELEVEN_AGENT_ID), openai: !!OPENAI_API_KEY } }));
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`alfa-voz-openai on :${port} (${REALTIME_MODEL}, voz ${VOICE})`));
