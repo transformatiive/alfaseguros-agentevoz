@@ -95,7 +95,7 @@ const btn=document.getElementById('btn'),dial=document.getElementById('dial'),st
 conversa=document.getElementById('conversa'),registo=document.getElementById('registo'),campos=document.getElementById('campos'),
 aguarde=document.getElementById('aguarde'),audioEl=document.getElementById('audio'),vers=document.getElementById('vers');
 let pc,dc,ws,stream,actx,micSrc,micProc,transcript=[],active=false,reconnects=0,wake,discoTimer,provider='openai',playT=0,playSources=[],userLines={},ending=false,endTimer,oaiAFalar=false,outGain,outDest,respAudioAtiva=false,diag={underruns:0,cortes:0,falsosVad:0,dobresResp:0},
-bufLead=0.45,lastAct=0,nudges=0,silTimer,arranque=null,arranqueTimer,respPend=0,updPend=0,vadDebounce=null,aguardaConfirmacao=false,micGateUntil=0,turno=null,userFalou=false,respPropria=false,destravas=0;
+bufLead=0.45,lastAct=0,nudges=0,silTimer,arranque=null,arranqueTimer,respPend=0,updPend=0,vadDebounce=null,aguardaConfirmacao=false,micGateUntil=0,turno=null,userFalou=false,respPropria=false,destravas=0,fechoMsg='';
 const SILENCIO_MS=5000,SILENCIO_CONFIRMACAO_MS=12000,VAD_DEBOUNCE_MS=250,MIC_GATE_TAIL_MS=350;
 const vozTeste=new URLSearchParams(location.search).get('voz');
 const VOZES_A=['marin','cedar','coral','sage','shimmer','alloy','ash','ballad','echo','verse'];
@@ -164,6 +164,13 @@ function aguardarFimDoAudio(){ // espera a fila de reprodução esvaziar (600ms 
 }
 function marcaAtividade(){lastAct=Date.now();}
 function pedeResposta(instr){respPropria=true;sendEvent({type:'response.create',response:{instructions:instr}});} // marcada: a guarda de fala dupla não a pode cancelar
+function forceFala(text,interruptible){ // xAI: texto fixo → síntese, sem o modelo improvisar (fecho / abertura)
+  if(!text)return;
+  respPropria=true;
+  sendEvent({type:'conversation.item.create',item:{type:'force_message',role:'assistant',interruptible:!!interruptible,
+    content:[{type:'output_text',text}]}});
+  linha('assistant',text);turno='assistant';
+}
 function handleEvent(ev){
   marcaAtividade();
   if(ev.type==='session.updated'&&arranque){if(updPend>0)updPend--;if(updPend===0){const f=arranque;arranque=null;clearTimeout(arranqueTimer);f();}}
@@ -201,8 +208,13 @@ function handleEvent(ev){
     sendEvent({type:'conversation.item.create',item:{type:'function_call_output',call_id:ev.call_id,output:'{"ok":true}'}});
     ending=true;st.textContent='A Alice está a despedir-se…';
     clearTimeout(endTimer);endTimer=setTimeout(stop,20000); // salvaguarda: nunca fica pendurado
-    if(provider==='grok'){setTimeout(aguardarFimDoAudio,1200);} // cobre despedida já dita antes do end_call
-    else{setTimeout(()=>{if(active&&ending&&!oaiAFalar)stop();},4000);}
+    if(provider==='grok'){
+      // Fecho verbatim via force_message (xAI best practice) — o modelo não improvisa a despedida
+      forceFala(fechoMsg||'Obrigada, o seu pedido ficou registado. Um consultor entrará em contacto. Obrigada por confiar na Alfaseguros!',false);
+      setTimeout(aguardarFimDoAudio,800);
+    } else {
+      setTimeout(()=>{if(active&&ending&&!oaiAFalar)stop();},4000);
+    }
   }
   // terminar só depois de a Alice acabar mesmo de falar
   if(provider==='openai'&&ev.type==='output_audio_buffer.started'){oaiAFalar=true;}
@@ -246,6 +258,9 @@ function replayOuAbertura(s,retoma){
         content:[t.role==='user'?{type:'input_text',text:t.text}:{type:'text',text:t.text}]}});
     }
     pedeResposta(PT_RESP+' A ligação caiu por instantes e foi retomada; a conversa anterior está acima. Continua exatamente de onde estava, sem cumprimentar de novo e sem repetir o que já foi dito. Se estavas à espera de um dado do cliente, repete apenas essa pergunta, numa frase curta.');
+  } else if(provider==='grok'){
+    // Abertura fixa (inclui aviso de gravação) — force_message, sem o modelo reformular
+    forceFala(s.first_message,false);
   } else {
     pedeResposta(PT_RESP+' A tua primeira fala é exatamente, palavra por palavra: "'+s.first_message+'"');
   }
@@ -279,10 +294,10 @@ async function ligarGrok(s,retoma){
       if(s.voice) ws.send(JSON.stringify({type:'session.update',session:{voice:s.voice}})); // voz em separado: nunca pode arrastar as instruções
       ws.send(JSON.stringify({type:'session.update',session:{
         instructions:s.instructions,
-        turn_detection:{type:'server_vad',threshold:0.9,silence_duration_ms:700,prefix_padding_ms:333},
+        turn_detection:{type:'server_vad',threshold:0.85,silence_duration_ms:600,prefix_padding_ms:333},
         reasoning:{effort:'none'},
         audio:{input:{transcription:{language_hint:'pt-PT',keyterms:['Alice','Alfaseguros','telemóvel','apólice','matrícula','morada','código postal','consultor','registei']}}},
-        tools:[{type:'function',name:'end_call',description:'Termina a chamada. Usar APENAS depois de o cliente confirmar o resumo e de o agente dizer a frase de fecho completa.',parameters:{type:'object',properties:{},additionalProperties:false}}],
+        tools:[{type:'function',name:'end_call',description:'Call ONLY after the client confirmed the FULL order summary with Está correto?. Do NOT speak a goodbye — the system delivers the fixed closing message via force_message.',parameters:{type:'object',properties:{},additionalProperties:false}}],
         tool_choice:'auto'
       }}));
       // primeira fala só depois de a configuração (voz/instruções) estar aplicada; fallback de 2s
@@ -308,6 +323,7 @@ async function ligar(retoma){
   const s=await (await fetch('/api/session',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(Object.assign({provider},vozTeste?{voice:vozTeste}:{}))})).json();
   if(!s.client_secret) throw new Error('sem sessão');
+  fechoMsg=s.fecho_message||fechoMsg;
   if(!stream) stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
   if(s.provider==='grok') await ligarGrok(s,retoma); else await ligarOpenAI(s,retoma);
 }
