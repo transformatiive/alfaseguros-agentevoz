@@ -40,7 +40,12 @@ ok("Grok: second person You are Alice", /You are Alice/.test(grokEffective));
 ok("Grok: NOT appending full prompt_alfa", !grokEffective.includes("És a Alice, assistente virtual da Alfaseguros, uma corretora"));
 ok("Grok: compact product fields", /EMBARCACAO: tipo/.test(grokEffective));
 ok("Grok: end_call after full confirm, no goodbye", /call \\`end_call\\` immediately[\s\S]*Do NOT speak a goodbye/.test(grokEffective));
-ok("Grok: language lock pt-PT", /Respond ONLY in European Portuguese \(pt-PT\)/.test(grokEffective));
+ok("Grok: language lock pt-PT", /Respond ONLY in European Portuguese \(pt-PT\)/.test(grokEffective) || /Respond EXCLUSIVELY in European Portuguese of Portugal/.test(grokEffective));
+ok("Grok: CRITICAL LANGUAGE block", /LANGUAGE \(pt-PT — highest priority\)/.test(grokEffective));
+ok("Grok: forbidden está fazendo", /está fazendo/.test(grokEffective));
+ok("Grok: required está a fazer", /está a fazer/.test(grokEffective));
+ok("Grok: forbidden a gente", /Forbidden:[\s\S]*a gente/.test(grokEffective));
+ok("Grok: pt-PT in Role & Persona", /Every word you speak is European Portuguese/.test(grokEffective));
 ok("Grok: slim CRITICAL (no dual CRITICAL headers up front)", !/^## CRITICAL INSTRUCTIONS — UMA FALA/m.test(grokEffective));
 ok("Grok prompt under 8k chars", grokEffective.length < 8000);
 
