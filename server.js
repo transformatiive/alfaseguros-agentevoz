@@ -22,7 +22,7 @@ const ELEVEN_BASE = process.env.ELEVENLABS_BASE || "https://api.elevenlabs.io";
 const XAI_API_KEY = process.env.XAI_API_KEY;
 const XAI_BASE = process.env.XAI_BASE || "https://api.x.ai";
 const GROK_MODEL = process.env.GROK_MODEL || "grok-voice-think-fast-2.0"; // fixado: "latest" muda debaixo dos pés
-const GROK_VOICE = process.env.GROK_VOICE || "eve";
+const GROK_VOICE = process.env.GROK_VOICE || "ara"; // "eve" é a voz por omissão da xAI, pensada para escuta longa; a Alfaseguros achou-a sem energia
 const PROMPT = fs.readFileSync(path.join(__dirname, "prompt_alfa.md"), "utf8");
 const FIRST_MESSAGE = "Olá, fala a Alice, assistente virtual da Alfaseguros. Os nossos consultores não conseguiram atender neste momento. Posso registar o seu pedido para que um consultor o contacte. Esta chamada é gravada. Em que posso ajudar?";
 
