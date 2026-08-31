@@ -5,9 +5,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { registarRotasSip } from "./sip-agent.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "2mb", verify: (req, _res, buf) => { req.rawBody = buf; } })); // rawBody: a assinatura do webhook da xAI é sobre os bytes originais
 app.use(express.static(path.join(__dirname, "public")));
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -21,6 +22,7 @@ const ELEVEN_AGENT_ID = process.env.ELEVENLABS_AGENT_ID;
 const ELEVEN_BASE = process.env.ELEVENLABS_BASE || "https://api.elevenlabs.io";
 const XAI_API_KEY = process.env.XAI_API_KEY;
 const XAI_BASE = process.env.XAI_BASE || "https://api.x.ai";
+const XAI_WEBHOOK_SECRET = process.env.XAI_WEBHOOK_SECRET; // devolvido pela xAI ao registar o número; sem ele a rota SIP fica inativa
 const GROK_MODEL = process.env.GROK_MODEL || "grok-voice-think-fast-2.0"; // fixado: "latest" muda debaixo dos pés
 const GROK_VOICE = process.env.GROK_VOICE || "ara"; // "eve" é a voz por omissão da xAI, pensada para escuta longa; a Alfaseguros achou-a sem energia
 const PROMPT = fs.readFileSync(path.join(__dirname, "prompt_alfa.md"), "utf8");
@@ -225,34 +227,49 @@ const SCHEMA = {
 };
 const EXTRACT_PROMPT = `Extrai, a partir da transcrição de uma chamada entre a assistente virtual Alice (Alfaseguros) e um cliente, os campos pedidos. Regras: 'dados_recolhidos' em formato 'campo: valor; campo: valor'. PROIBIDO incluir qualquer informação de saúde, doenças, medicação ou deficiências em qualquer campo; se o cliente a mencionou, marca mencionou_dados_saude=true e escreve no resumo apenas 'cliente mencionou informação de saúde, a recolher por humano'. 'campos_em_falta' = campos obrigatórios do produto que o cliente não soube. 'produto' usa os códigos: AUTOMOVEL, MULTIRRISCOS_HABITACAO, MULTIRRISCOS_CONDOMINIO, MULTIRRISCOS_EMPRESARIAL, SAUDE, TVDE, ACIDENTES_TRABALHO_INDIVIDUAL, ACIDENTES_TRABALHO_COLETIVO, RC_GERAL, RC_CONSTRUCAO, RC_EMPRESARIAL, RC_MEDICOS, RC_ARMAS_CACADOR, OBRAS_MONTAGENS, ANIMAIS, BICICLETAS_TROTINETAS, VIAGEM, EMBARCACAO, ACIDENTES_PESSOAIS (ou "" se não for simulação). 'quer_humano' só é true se o cliente pediu EXPLICITAMENTE para falar com uma pessoa; um colega ligar de volta é o fluxo normal e NÃO conta. 'prioridade' alta se sinistro urgente, pedido sem resposta, cliente irritado ou quer_humano=true. Resumo em 2 a 4 frases, português europeu, para um consultor humano. Campos vazios = "".`;
 
+async function extrairEEnviar(linhas, diag, origem = "alfa-voz-web") {
+  const transcript = (linhas || []).map(t => `${t.role === "user" ? "CLIENTE" : "ALICE"}: ${t.text}`).join("\n");
+  const r = await fetch(`${OPENAI_BASE}/v1/responses`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: TEXT_MODEL, reasoning: { effort: "low" },
+      input: [{ role: "system", content: EXTRACT_PROMPT }, { role: "user", content: transcript }],
+      text: { format: { type: "json_schema", name: "resultado_chamada", strict: true, schema: SCHEMA } }
+    })
+  });
+  const data = await r.json();
+  if (!r.ok) { const e = new Error("extracao"); e.status = r.status; e.data = data; throw e; }
+  const txt = data.output?.flatMap(o => o.content || []).find(c => c.type === "output_text")?.text || "{}";
+  const resultado = JSON.parse(txt);
+  if (RESULT_WEBHOOK) {
+    fetch(RESULT_WEBHOOK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resultado, transcript: linhas || [], diag, data: new Date().toISOString(), origem })
+    }).catch(() => {});
+  }
+  return resultado;
+}
+
 app.post("/api/extract", async (req, res) => {
   try {
-    const transcript = (req.body.transcript || []).map(t => `${t.role === "user" ? "CLIENTE" : "ALICE"}: ${t.text}`).join("\n");
-    const r = await fetch(`${OPENAI_BASE}/v1/responses`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: TEXT_MODEL, reasoning: { effort: "low" },
-        input: [{ role: "system", content: EXTRACT_PROMPT }, { role: "user", content: transcript }],
-        text: { format: { type: "json_schema", name: "resultado_chamada", strict: true, schema: SCHEMA } }
-      })
-    });
-    const data = await r.json();
-    if (!r.ok) return res.status(r.status).json(data);
-    const txt = data.output?.flatMap(o => o.content || []).find(c => c.type === "output_text")?.text || "{}";
-    const resultado = JSON.parse(txt);
-    if (RESULT_WEBHOOK) {
-      fetch(RESULT_WEBHOOK, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resultado, transcript: req.body.transcript || [], diag: req.body.diag, data: new Date().toISOString(), origem: "alfa-voz-web" })
-      }).catch(() => {});
-    }
-    res.json({ resultado, transcript });
-  } catch (e) { res.status(500).json({ error: String(e) }); }
+    const resultado = await extrairEEnviar(req.body.transcript, req.body.diag, "alfa-voz-web");
+    res.json({ resultado, transcript: req.body.transcript || [] });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json(e.data);
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+registarRotasSip(app, {
+  xaiBase: XAI_BASE, xaiKey: XAI_API_KEY, segredoWebhook: XAI_WEBHOOK_SECRET,
+  instrucoes: GROK_INSTRUCTIONS, voz: GROK_VOICE, primeiraFala: FIRST_MESSAGE,
+  extrair: extrairEEnviar
 });
 
 app.get("/health", (_, res) => res.json({ ok: true, model: REALTIME_MODEL, voice: VOICE,
-  motores: { grok: !!XAI_API_KEY, eleven: !!(ELEVEN_API_KEY && ELEVEN_AGENT_ID), openai: !!OPENAI_API_KEY } }));
+  motores: { grok: !!XAI_API_KEY, eleven: !!(ELEVEN_API_KEY && ELEVEN_AGENT_ID), openai: !!OPENAI_API_KEY },
+  sip: { grok: !!(XAI_API_KEY && XAI_WEBHOOK_SECRET) } }));
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`alfa-voz-openai on :${port} (${REALTIME_MODEL}, voz ${VOICE})`));
