@@ -107,7 +107,7 @@ const motorUrl=new URLSearchParams(location.search).get('motor');
 if(motorUrl==='openai')provider='openai';
 const CAT={SIMULACAO:'Simulação',GESTAO_APOLICE:'Gestão de apólice',SINISTRO:'Sinistro',CANCELAMENTO:'Cancelamento',PEDIDO_SEM_RESPOSTA:'Pedido sem resposta',OUTRO:'Outro'};
 const PROD={AUTOMOVEL:'Automóvel',MULTIRRISCOS_HABITACAO:'Multirriscos Habitação',MULTIRRISCOS_CONDOMINIO:'Multirriscos Condomínio',MULTIRRISCOS_EMPRESARIAL:'Multirriscos Empresarial',SAUDE:'Saúde',TVDE:'TVDE',ACIDENTES_TRABALHO_INDIVIDUAL:'Acidentes de Trabalho — Individual',ACIDENTES_TRABALHO_COLETIVO:'Acidentes de Trabalho — Coletivo',RC_GERAL:'Responsabilidade Civil Geral',RC_CONSTRUCAO:'RC Construção',RC_EMPRESARIAL:'RC Empresarial',RC_MEDICOS:'RC Médicos',RC_ARMAS_CACADOR:'RC Armas / Caçador',OBRAS_MONTAGENS:'Obras e Montagens',ANIMAIS:'Animais de Companhia',BICICLETAS_TROTINETAS:'Bicicletas e Trotinetas',VIAGEM:'Viagem',EMBARCACAO:'Embarcação',ACIDENTES_PESSOAIS:'Acidentes Pessoais'};
-const LING_RESP='Responde na língua em que a conversa está a decorrer; se ainda for português, português europeu de Portugal (pt-PT), nunca vocabulário brasileiro. Uma só fala — cala-te a seguir e espera pelo cliente.';
+const LING_RESP='Responde na língua em que a conversa está a decorrer; se ainda for português, português europeu de Portugal (pt-PT) — telemóvel/ecrã/autocarro/facto/desporto, nunca celular/tela/ônibus/esporte nem gerúndio brasileiro. Uma só fala — cala-te a seguir e espera pelo cliente.';
 vers.querySelectorAll('button').forEach(b=>b.onclick=()=>{if(active)return;provider=b.dataset.p;vers.querySelectorAll('button').forEach(x=>x.classList.toggle('sel',x===b));});
 function novaLinha(role,text){
   const d=document.createElement('div');d.className='msg '+(role==='user'?'cli':'alfa');
@@ -313,7 +313,7 @@ async function ligarGrok(s,retoma){
         reasoning:{effort:'none'},
         // language_hint é uma sugestão, não um bloqueio: mantém a qualidade do pt-PT (a esmagadora maioria
         // das chamadas) sem impedir o reconhecimento de outra língua. Confirmar em teste com uma chamada em inglês.
-        audio:{input:{transcription:{language_hint:'pt-PT',keyterms:['Alice','Alfaseguros','telemóvel','apólice','matrícula','morada','código postal','consultor','registei']}}},
+        audio:{input:{transcription:{language_hint:'pt-PT',keyterms:['Alice','Alfaseguros','telemóvel','apólice','matrícula','morada','código postal','consultor','registei','ecrã','autocarro','pequeno-almoço','carta de condução','desporto','utilizador','ficheiro','palavra-passe']}}},
         tools:[{type:'function',name:'end_call',description:'Termina a chamada. Usar APENAS depois de o cliente confirmar o resumo e de o agente dizer a frase de fecho completa.',parameters:{type:'object',properties:{},additionalProperties:false}}],
         tool_choice:'auto'
       }}));

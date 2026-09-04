@@ -75,7 +75,7 @@ class ChamadaSip {
       turn_detection: { type: "server_vad", threshold: 0.9, silence_duration_ms: 800, prefix_padding_ms: 333, idle_timeout_ms: 10000 },
       reasoning: { effort: "none" },
       audio: { input: { transcription: { language_hint: "pt-PT", keyterms:
-        ["Alice", "Alfaseguros", "telemóvel", "apólice", "matrícula", "morada", "código postal", "consultor", "registei"] } } },
+        ["Alice", "Alfaseguros", "telemóvel", "apólice", "matrícula", "morada", "código postal", "consultor", "registei", "ecrã", "autocarro", "pequeno-almoço", "carta de condução", "desporto", "utilizador", "ficheiro", "palavra-passe"] } } },
       tools: [{ type: "function", name: "end_call",
         description: "Termina a chamada. Usar APENAS depois de o cliente confirmar o resumo e de o agente dizer a frase de fecho completa.",
         parameters: { type: "object", properties: {}, additionalProperties: false } }],
