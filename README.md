@@ -9,7 +9,8 @@ Mesmo prompt e mesma estrutura de dados que o agente ElevenLabs.
 ## Variáveis
 - OPENAI_API_KEY (obrigatória)
 - REALTIME_MODEL (default gpt-realtime-2.1; alternativa gpt-realtime-2.1-mini)
-- VOICE (default marin; alternativas: cedar, coral, sage, shimmer)
+- VOICE (OpenAI Realtime; default marin; alternativas: cedar, coral, sage, shimmer)
+- GROK_VOICE (xAI Grok / SIP Telnyx→xAI e browser Grok; default ara)
 - TEXT_MODEL (default gpt-5.4-mini, para o resumo/extração pós-chamada)
 - OPENAI_BASE (default https://api.openai.com; usar https://eu.api.openai.com para residência UE)
 
