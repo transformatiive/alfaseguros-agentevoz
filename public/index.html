@@ -71,7 +71,8 @@ footer a{color:var(--bordeaux);font-weight:600;text-decoration:none}
   <h1>Fale com a <em>Alice</em></h1>
   <p class="sub">A Alice regista o seu pedido e um consultor da Alfaseguros liga-lhe de volta até ao próximo dia útil.</p>
   <div class="vers" id="vers">
-    <button class="sel" data-p="grok">SpaceX.ai Grok Live 2</button>
+    <button class="sel" data-p="openai">GPT-Live 1</button>
+    <button data-p="grok">SpaceX.ai Grok Live 2</button>
     <button data-p="eleven">ElevenLabs Agents</button>
   </div>
   <div class="dial" id="dial">
@@ -94,17 +95,18 @@ footer a{color:var(--bordeaux);font-weight:600;text-decoration:none}
 const btn=document.getElementById('btn'),dial=document.getElementById('dial'),st=document.getElementById('status'),
 conversa=document.getElementById('conversa'),registo=document.getElementById('registo'),campos=document.getElementById('campos'),
 aguarde=document.getElementById('aguarde'),audioEl=document.getElementById('audio'),vers=document.getElementById('vers');
-let pc,dc,ws,stream,actx,micSrc,micProc,transcript=[],active=false,reconnects=0,wake,discoTimer,provider='grok',playT=0,playSources=[],userLines={},ending=false,endTimer,oaiAFalar=false,outGain,outDest,respAudioAtiva=false,diag={underruns:0,cortes:0,falsosVad:0,dobresResp:0,destravas:0,limpezas:0},
-bufLead=0.7,lastAct=0,nudges=0,silTimer,arranque=null,arranqueTimer,respPend=0,updPend=0,vadDebounce=null,aguardaConfirmacao=false,micGateUntil=0,turno=null,userFalou=false,respPropria=false,destravas=0,convId=null,respStream=false,instrucoesSessao='';
+let pc,dc,ws,stream,actx,micSrc,micProc,transcript=[],active=false,reconnects=0,wake,discoTimer,provider='openai',playT=0,playSources=[],userLines={},ending=false,endTimer,oaiAFalar=false,outGain,outDest,respAudioAtiva=false,diag={underruns:0,cortes:0,falsosVad:0,dobresResp:0,destravas:0,limpezas:0},
+bufLead=0.7,lastAct=0,nudges=0,silTimer,arranque=null,arranqueTimer,respPend=0,updPend=0,vadDebounce=null,aguardaConfirmacao=false,micGateUntil=0,turno=null,userFalou=false,respPropria=false,destravas=0,convId=null,respStream=false,instrucoesSessao='',liveFirst='',liveIn='',liveOut='',liveReady=false;
 const SILENCIO_MS=5000,SILENCIO_CONFIRMACAO_MS=12000,VAD_DEBOUNCE_MS=250,MIC_GATE_TAIL_MS=350,
 // o telemóvel captura a 48 kHz, tem jitter de rede móvel e pouca folga de reprodução: os buracos
 // medidos na gravação de 26/08 estavam todos na saudação, a fala mais longa da chamada
 MOVEL=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||(navigator.maxTouchPoints>1&&/Mac/.test(navigator.platform)),
 BUF_INICIAL=MOVEL?0.7:0.45,BUF_MAX=1.0,RESPOSTA_LENTA_MS=7000;
 const vozTeste=new URLSearchParams(location.search).get('voz');
-// A Versão A (OpenAI Realtime) continua a existir no servidor mas saiu do seletor: abre-se com ?motor=openai.
+// Default: GPT-Live 1 (gpt-live-1 / marin). Grok e ElevenLabs ficam no seletor; ?motor=grok|eleven força.
 const motorUrl=new URLSearchParams(location.search).get('motor');
-if(motorUrl==='openai')provider='openai';
+if(motorUrl==='grok'||motorUrl==='eleven'||motorUrl==='openai')provider=motorUrl;
+document.querySelectorAll('#vers button').forEach(b=>b.classList.toggle('sel',b.dataset.p===provider));
 const CAT={SIMULACAO:'Simulação',GESTAO_APOLICE:'Gestão de apólice',SINISTRO:'Sinistro',CANCELAMENTO:'Cancelamento',PEDIDO_SEM_RESPOSTA:'Pedido sem resposta',OUTRO:'Outro'};
 const PROD={AUTOMOVEL:'Automóvel',MULTIRRISCOS_HABITACAO:'Multirriscos Habitação',MULTIRRISCOS_CONDOMINIO:'Multirriscos Condomínio',MULTIRRISCOS_EMPRESARIAL:'Multirriscos Empresarial',SAUDE:'Saúde',TVDE:'TVDE',ACIDENTES_TRABALHO_INDIVIDUAL:'Acidentes de Trabalho — Individual',ACIDENTES_TRABALHO_COLETIVO:'Acidentes de Trabalho — Coletivo',RC_GERAL:'Responsabilidade Civil Geral',RC_CONSTRUCAO:'RC Construção',RC_EMPRESARIAL:'RC Empresarial',RC_MEDICOS:'RC Médicos',RC_ARMAS_CACADOR:'RC Armas / Caçador',OBRAS_MONTAGENS:'Obras e Montagens',ANIMAIS:'Animais de Companhia',BICICLETAS_TROTINETAS:'Bicicletas e Trotinetas',VIAGEM:'Viagem',EMBARCACAO:'Embarcação',ACIDENTES_PESSOAIS:'Acidentes Pessoais'};
 const LING_RESP='Responde na língua em que a conversa está a decorrer; se ainda for português, português europeu de Portugal (pt-PT) — telemóvel/ecrã/autocarro/facto/desporto, nunca celular/tela/ônibus/esporte nem gerúndio brasileiro. Uma só fala — cala-te a seguir e espera pelo cliente.';
@@ -239,7 +241,7 @@ function vigiaSilencio(){ // 5s sem ninguém falar => a Alice retoma; à 3ª vez
   clearInterval(silTimer);
   silTimer=setInterval(()=>{
     if(!active||ending)return;
-    if(provider==='eleven')return; // a ElevenLabs conduz o turno do lado dela; um aviso nosso aqui não chegaria a lado nenhum
+    if(provider==='eleven'||provider==='openai')return; // ElevenLabs e GPT-Live conduzem o turno do lado delas
     if(alfaAFalar())return;
     const limiteSilencio=aguardaConfirmacao?SILENCIO_CONFIRMACAO_MS:SILENCIO_MS;
     if(respPend&&turno==='user'&&Date.now()-respPend>3000)estado('A Alice está a pensar…');
@@ -276,7 +278,63 @@ function replayOuAbertura(s,retoma){
     pedeResposta(LING_RESP+' A tua primeira fala é exatamente, palavra por palavra: "'+s.first_message+'"');
   }
 }
-async function ligarOpenAI(s,retoma){
+async function esperarIce(connection){
+  if(connection.iceGatheringState==='complete')return;
+  await new Promise((ok,ko)=>{
+    const t=setTimeout(()=>{connection.removeEventListener('icegatheringstatechange',on);ko(new Error('ICE timeout'));},10000);
+    function on(){if(connection.iceGatheringState!=='complete')return;clearTimeout(t);connection.removeEventListener('icegatheringstatechange',on);ok();}
+    connection.addEventListener('icegatheringstatechange',on);on();
+  });
+}
+function despejarLiveUser(){
+  const t=liveIn.trim();liveIn='';
+  if(t){linha('user',t);turno='user';}
+}
+function despejarLiveAlice(){
+  const t=liveOut.trim();liveOut='';
+  if(t){linha('assistant',t);turno='assistant';estado(EM_CHAMADA);}
+}
+function nomeFerramentaLive(ev){
+  return ev.name||ev.item?.name||ev.event?.name||ev.event?.item?.name||'';
+}
+function pedirPrimeiraFalaLive(retoma){
+  if(!dc||dc.readyState!=='open')return;
+  if(retoma){
+    dc.send(JSON.stringify({type:'session.instructions.append',event_id:'resume',delegation_id:null,
+      content:'A ligação caiu por instantes e foi retomada; o histórico da conversa já está na sessão. Continua exatamente de onde estava, sem cumprimentar de novo e sem repetir o que já foi dito. Se estavas à espera de um dado do cliente, repete apenas essa pergunta, numa frase curta.'}));
+    dc.send(JSON.stringify({type:'session.commentary.append',event_id:'resume-go',delegation_id:null,
+      content:'Continua a conversa agora, seguindo as instruções.'}));
+    return;
+  }
+  dc.send(JSON.stringify({type:'session.instructions.append',event_id:'greeting',delegation_id:null,
+    content:'A tua primeira fala nesta chamada é, palavra por palavra, em português europeu de Portugal (Lisboa, pt-PT — nunca brasileiro), exactamente este texto e nada mais. Diz já, sem esperar pelo cliente; depois fica a escutar:\n\n«'+liveFirst+'»'}));
+  dc.send(JSON.stringify({type:'session.commentary.append',event_id:'greeting-go',delegation_id:null,
+    content:'Começa agora a conversa, seguindo as instruções. Diz a saudação exacta e depois escuta.'}));
+}
+function handleLiveEvent(ev){
+  marcaAtividade();
+  const t=ev.type;
+  if(t==='session.started'){liveReady=true;pedirPrimeiraFalaLive(reconnects>0);return;}
+  if(t==='session.input_transcript.delta'&&ev.delta){liveIn+=ev.delta;return;}
+  if(t==='session.input_transcript.done'){if(ev.delta)liveIn+=ev.delta;if(ev.transcript)liveIn=ev.transcript;despejarLiveUser();return;}
+  if(t==='session.output_transcript.delta'&&ev.delta){liveOut+=ev.delta;oaiAFalar=true;return;}
+  if(t==='session.output_transcript.done'){if(ev.delta)liveOut+=ev.delta;if(ev.transcript)liveOut=ev.transcript;despejarLiveAlice();oaiAFalar=false;if(ending){clearTimeout(endTimer);setTimeout(stop,500);}return;}
+  if(t==='response.event'){
+    const inner=ev.event||{};
+    const innerT=inner.type||'';
+    const nome=nomeFerramentaLive(inner);
+    if(nome==='end_call'&&(innerT==='response.function_call_arguments.done'||innerT==='response.output_item.done'||inner.item?.type==='function_call')){
+      ending=true;st.textContent='A Alice está a despedir-se…';
+      clearTimeout(endTimer);endTimer=setTimeout(stop,12000);
+      try{dc&&dc.readyState==='open'&&dc.send(JSON.stringify({type:'session.close'}));}catch(_){}
+    }
+    return;
+  }
+  if(t==='session.closed'){if(active&&ending)stop();return;}
+  if(t==='error'){st.textContent='Ocorreu um problema na chamada.';}
+}
+async function ligarOpenAI(retoma){
+  liveIn='';liveOut='';liveReady=false;oaiAFalar=false;
   pc=new RTCPeerConnection();
   pc.ontrack=e=>{audioEl.srcObject=e.streams[0];audioEl.play().catch(()=>{});};
   pc.addTrack(stream.getTracks()[0],stream);
@@ -286,12 +344,18 @@ async function ligarOpenAI(s,retoma){
       discoTimer=setTimeout(()=>{if(active&&pc.connectionState!=='connected')retomar();},4000);}
     else if(cs==='failed'){retomar();}};
   dc=pc.createDataChannel('oai-events');
-  dc.onopen=()=>replayOuAbertura(s,retoma); // instructions de response.create substituem as da sessão nesta resposta
-  dc.onmessage=e=>handleEvent(JSON.parse(e.data));
+  dc.onmessage=e=>{try{handleLiveEvent(JSON.parse(e.data));}catch(_){}};
   const offer=await pc.createOffer();await pc.setLocalDescription(offer);
-  const r=await fetch(`${s.base}/v1/realtime/calls`,{method:'POST',headers:{Authorization:`Bearer ${s.client_secret}`,'Content-Type':'application/sdp'},body:offer.sdp});
-  if(!r.ok) throw new Error('ligação recusada');
-  await pc.setRemoteDescription({type:'answer',sdp:await r.text()});
+  await esperarIce(pc);
+  const sdp=pc.localDescription&&pc.localDescription.sdp;
+  if(!sdp) throw new Error('sem SDP');
+  const s=await (await fetch('/api/session',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(Object.assign({provider:'openai',sdp},vozTeste?{voice:vozTeste}:{},retoma&&transcript.length?{transcript}:{}))})).json();
+  if(s.error) throw new Error(s.error);
+  if(!s.transport||!s.transport.sdp) throw new Error('sem sessão');
+  liveFirst=s.first_message||liveFirst;
+  await pc.setRemoteDescription({type:'answer',sdp:s.transport.sdp});
+  // HTTP já iniciou a sessão Live — não enviar session.start. A saudação vai em session.started.
 }
 async function ligarGrok(s,retoma){
   actx=actx||new (window.AudioContext||window.webkitAudioContext)();
@@ -378,6 +442,11 @@ async function ligarEleven(s){
   });
 }
 async function ligar(retoma){
+  if(provider==='openai'){
+    if(!stream) stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+    await ligarOpenAI(retoma);
+    return;
+  }
   const s=await (await fetch('/api/session',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(Object.assign({provider},vozTeste?{voice:vozTeste}:{}))})).json();
   if(s.error) throw new Error(s.error);
@@ -385,12 +454,11 @@ async function ligar(retoma){
   if(s.provider==='eleven'&&!s.ws_url) throw new Error('sem sessão');
   if(!stream) stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
   if(s.provider==='eleven') await ligarEleven(s);
-  else if(s.provider==='grok') await ligarGrok(s,retoma);
-  else await ligarOpenAI(s,retoma);
+  else await ligarGrok(s,retoma);
 }
 btn.onclick=()=>active?stop():start();
 async function start(){
-  btn.disabled=true;vers.classList.add('trancado');st.textContent='A ligar…';transcript=[];userLines={};reconnects=0;ending=false;clearTimeout(endTimer);clearTimeout(vadDebounce);vadDebounce=null;diag={underruns:0,cortes:0,falsosVad:0,dobresResp:0,destravas:0,limpezas:0};bufLead=BUF_INICIAL;nudges=0;arranque=null;oaiAFalar=false;respAudioAtiva=false;respStream=false;instrucoesSessao='';respPend=0;aguardaConfirmacao=false;micGateUntil=0;turno=null;userFalou=false;respPropria=false;destravas=0;
+  btn.disabled=true;vers.classList.add('trancado');st.textContent='A ligar…';transcript=[];userLines={};reconnects=0;ending=false;clearTimeout(endTimer);clearTimeout(vadDebounce);vadDebounce=null;diag={underruns:0,cortes:0,falsosVad:0,dobresResp:0,destravas:0,limpezas:0};bufLead=BUF_INICIAL;nudges=0;arranque=null;oaiAFalar=false;respAudioAtiva=false;respStream=false;instrucoesSessao='';respPend=0;aguardaConfirmacao=false;micGateUntil=0;turno=null;userFalou=false;respPropria=false;destravas=0;liveIn='';liveOut='';liveReady=false;liveFirst='';
   conversa.innerHTML='';conversa.style.display='none';registo.style.display='none';
   try{
     await ligar(false);
@@ -400,7 +468,8 @@ async function start(){
   }catch(_){st.textContent='Não foi possível ligar. Verifique o microfone e tente novamente.';btn.disabled=false;vers.classList.remove('trancado');}
 }
 function desligarTransporte(){
-  clearTimeout(arranqueTimer);clearTimeout(vadDebounce);vadDebounce=null;arranque=null;oaiAFalar=false;respAudioAtiva=false;respStream=false;respPend=0;aguardaConfirmacao=false;micGateUntil=0;turno=null;userFalou=false;respPropria=false;destravas=0;
+  clearTimeout(arranqueTimer);clearTimeout(vadDebounce);vadDebounce=null;arranque=null;oaiAFalar=false;respAudioAtiva=false;respStream=false;respPend=0;aguardaConfirmacao=false;micGateUntil=0;turno=null;userFalou=false;respPropria=false;destravas=0;liveReady=false;
+  try{if(provider==='openai'&&dc&&dc.readyState==='open')dc.send(JSON.stringify({type:'session.close'}));}catch(_){}
   try{dc&&dc.close();pc&&pc.close();}catch(_){}
   try{if(ws){ws.onclose=null;ws.close();}}catch(_){}
   try{micProc&&micProc.disconnect();micSrc&&micSrc.disconnect();}catch(_){}
@@ -430,7 +499,7 @@ async function stop(){
   dial.classList.remove('on');vers.classList.remove('trancado');btn.setAttribute('aria-label','Iniciar chamada');
   if(transcript.length){
     st.textContent='';aguarde.style.display='flex';
-    let r={};try{r=await (await fetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript,diag:Object.assign({},diag,{reconexoes:reconnects,motor:provider==='grok'?'Versão B':'Versão A'})})})).json();}catch(_){}
+    let r={};try{r=await (await fetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript,diag:Object.assign({},diag,{reconexoes:reconnects,motor:provider==='grok'?'Versão B':provider==='eleven'?'ElevenLabs':'GPT-Live 1'})})})).json();}catch(_){}
     aguarde.style.display='none';
     const d=r.resultado;
     if(d){

@@ -1,11 +1,22 @@
-// Alice (Alfaseguros) - teste web com OpenAI Realtime (gpt-realtime-2.1) por WebRTC.
-// Endpoints: GET / (página), POST /api/session (token efémero), POST /api/extract (resumo + campos no fim da chamada)
+// Alice (Alfaseguros) — browser default: GPT-Live-1 (ChatGPT Voice) por WebRTC.
+// SIP Ringover continua xAI Grok (sip-agent.js) até um follow-up GPT-Live SIP.
+// Endpoints: GET / (página), POST /api/session (Live SDP ou Grok/Eleven token), POST /api/extract
 import express from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { registarRotasSip } from "./sip-agent.js";
+import {
+  GPT_LIVE_USER_AGENT,
+  liveInputFromTranscript,
+  liveSessionConfig,
+  openaiLiveSessionsUrl,
+  resolveGptLiveDelegateModel,
+  resolveGptLiveModel,
+  resolveGptLiveSpeed,
+  resolveGptLiveVoice
+} from "./live-session.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json({ limit: "2mb", verify: (req, _res, buf) => { req.rawBody = buf; } })); // rawBody: a assinatura do webhook da xAI é sobre os bytes originais
@@ -13,8 +24,10 @@ app.use(express.static(path.join(__dirname, "public")));
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_BASE = process.env.OPENAI_BASE || "https://api.openai.com"; // usar https://eu.api.openai.com para residência UE
-const REALTIME_MODEL = process.env.REALTIME_MODEL || "gpt-realtime-2.1";
-const VOICE = process.env.VOICE || "marin";
+const LIVE_MODEL = resolveGptLiveModel(process.env);
+const VOICE = resolveGptLiveVoice(process.env);
+const LIVE_SPEED = resolveGptLiveSpeed(process.env);
+const LIVE_DELEGATE_MODEL = resolveGptLiveDelegateModel(process.env);
 const TEXT_MODEL = process.env.TEXT_MODEL || "gpt-5.4-mini";
 const RESULT_WEBHOOK = process.env.RESULT_WEBHOOK || "https://trnsf.up.railway.app/webhook/alfa-voz-resultado"; // n8n: envia o resultado por email; vazio ("") desativa
 const ELEVEN_API_KEY = process.env.ELEVENLABS_API_KEY;
@@ -112,6 +125,11 @@ const A_RULES = `# Papel e objetivo
 3. Falar na língua do cliente, com tom estável (português europeu por omissão).
 4. Rapidez da chamada.
 
+# GPT-Live (turnos e delegação)
+- Backchannel policy: Use moderate backchannels. Acknowledge naturally without competing with the main response.
+- Interruption policy: Stop speaking when the user interrupts. Listen to what they say.
+- Delegation policy: Delegate to the backend only to hang up (end_call) after the closing phrase. Do not delegate greetings, ordinary questions, or data capture.
+
 `;
 
 const INSTRUCTIONS = A_RULES + PROMPT + CALL_BOOKENDS;
@@ -161,31 +179,17 @@ Muda só a língua: as perguntas, a ordem e as confirmações do guião são exa
 
 ` + FLOW_RULES + PROMPT + CALL_BOOKENDS;
 
-const VOICES = ["marin", "cedar", "coral", "sage", "shimmer", "alloy", "ash", "ballad", "echo", "verse"];
+const LIVE_DELEGATE_INSTRUCTIONS = `És o raciocínio de uma chamada inbound da Alice (Alfaseguros). A voz na linha já está a falar com o cliente em português europeu de Portugal (pt-PT, Lisboa — nunca brasileiro).
+Chama a ferramenta end_call APENAS depois de o cliente confirmar o resumo e de a Alice dizer a frase de fecho completa. Nunca desligues antes disso.`;
 
-export const sessionConfig = (voice = VOICE) => ({
-  session: {
-    type: "realtime",
-    model: REALTIME_MODEL,
-    instructions: INSTRUCTIONS,
-    output_modalities: ["audio"],
-    audio: {
-      input: {
-        transcription: { model: "gpt-4o-transcribe", prompt: TRANSCRIPTION_PROMPT }, // sem "language": o cliente pode falar noutra língua e o bloqueio rígido transcreveria tudo como português
-        noise_reduction: { type: "near_field" },
-        turn_detection: { type: "semantic_vad", eagerness: "low", create_response: true, interrupt_response: false }
-      },
-      output: { voice, speed: 1.0 }
-    },
-    tools: [{
-      type: "function",
-      name: "end_call",
-      description: "Termina a chamada. Usar APENAS depois de o cliente confirmar o resumo e de o agente dizer a frase de fecho completa.",
-      parameters: { type: "object", properties: {}, additionalProperties: false }
-    }],
-    tool_choice: "auto",
-    max_output_tokens: 4096 // ~3,4 min de fala: o limite anterior (600 = ~30s) truncava resumos a meio
-  }
+export const sessionConfig = (voice = VOICE, input) => liveSessionConfig({
+  model: LIVE_MODEL,
+  voice,
+  speed: LIVE_SPEED,
+  instructions: INSTRUCTIONS,
+  delegateModel: LIVE_DELEGATE_MODEL,
+  delegateInstructions: LIVE_DELEGATE_INSTRUCTIONS,
+  input
 });
 
 app.post("/api/session", async (req, res) => {
@@ -222,15 +226,37 @@ app.post("/api/session", async (req, res) => {
         instructions: GROK_INSTRUCTIONS, first_message: FIRST_MESSAGE
       });
     }
-    const voice = VOICES.includes(req.body?.voice) ? req.body.voice : VOICE; // override de teste via ?voz= na página
-    const r = await fetch(`${OPENAI_BASE}/v1/realtime/client_secrets`, {
+    if (!OPENAI_API_KEY) return res.status(503).json({ error: "openai indisponível: falta OPENAI_API_KEY" });
+    const sdp = typeof req.body?.sdp === "string" ? req.body.sdp.trim() : "";
+    if (!sdp) return res.status(400).json({ error: "An SDP offer is required" });
+    const voice = resolveGptLiveVoice(process.env, req.body?.voice); // override de teste via ?voz= na página
+    const input = liveInputFromTranscript(req.body?.transcript);
+    const r = await fetch(openaiLiveSessionsUrl(OPENAI_BASE), {
       method: "POST",
-      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ expires_after: { anchor: "created_at", seconds: 3600 }, ...sessionConfig(voice) })
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+        "User-Agent": GPT_LIVE_USER_AGENT
+      },
+      body: JSON.stringify({
+        session: sessionConfig(voice, input),
+        transport: { type: "webrtc", sdp }
+      })
     });
-    const data = await r.json();
+    const data = await r.json().catch(() => ({}));
     if (!r.ok) return res.status(r.status).json(data);
-    res.json({ provider: "openai", client_secret: data.value, model: REALTIME_MODEL, voice, base: OPENAI_BASE, first_message: FIRST_MESSAGE });
+    const answer = data.transport?.sdp;
+    if (!answer) return res.status(502).json({ error: "Live session creation failed: missing SDP answer" });
+    res.status(201).json({
+      provider: "openai",
+      engine: "gpt-live",
+      model: LIVE_MODEL,
+      voice,
+      speed: LIVE_SPEED,
+      first_message: FIRST_MESSAGE,
+      session_id: data.session?.id,
+      transport: { type: "webrtc", sdp: answer }
+    });
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
@@ -292,11 +318,23 @@ registarRotasSip(app, {
 
 app.get("/health", (_, res) => res.json({
   ok: true,
-  model: REALTIME_MODEL,
-  voice: VOICE, // OpenAI Realtime — não é a voz Grok
-  grokVoice: GROK_VOICE, // SIP Telnyx→xAI e browser Grok; default ara
-  motores: { grok: !!XAI_API_KEY, eleven: !!(ELEVEN_API_KEY && ELEVEN_AGENT_ID), openai: !!OPENAI_API_KEY },
-  sip: { grok: !!(XAI_API_KEY && XAI_WEBHOOK_SECRET), voice: GROK_VOICE }
+  engine: "gpt-live",
+  model: LIVE_MODEL, // advertised default spoken engine (browser GPT-Live)
+  voice: VOICE, // advertised default voice: marin (not Ara)
+  speed: LIVE_SPEED,
+  grokVoice: GROK_VOICE, // SIP Ringover / browser Grok only — not the advertised default
+  motores: {
+    grok: !!XAI_API_KEY,
+    eleven: !!(ELEVEN_API_KEY && ELEVEN_AGENT_ID),
+    openai: !!OPENAI_API_KEY,
+    gptLive: !!OPENAI_API_KEY
+  },
+  sip: {
+    engine: "grok",
+    grok: !!(XAI_API_KEY && XAI_WEBHOOK_SECRET),
+    voice: GROK_VOICE,
+    note: "Ringover SIP remains xAI Grok until a GPT-Live SIP follow-up"
+  }
 }));
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`alfa-voz-openai on :${port} (${REALTIME_MODEL}, openai voice ${VOICE}, grok voice ${GROK_VOICE})`));
+app.listen(port, () => console.log(`alfa-voz-openai on :${port} (${LIVE_MODEL} ${VOICE} @${LIVE_SPEED}, sip grok ${GROK_VOICE})`));
