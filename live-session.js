@@ -57,10 +57,57 @@ export function resolveGptLiveDelegateModel(env = process.env) {
   return env.OPENAI_LIVE_DELEGATE_MODEL?.trim() || DEFAULT_GPT_LIVE_DELEGATE_MODEL;
 }
 
-export function openaiLiveSessionsUrl(openaiBase = "https://api.openai.com") {
-  const https = String(openaiBase).replace(/\/+$/, "");
-  return `${https}/v1/live/sessions`;
+export function openaiHttpsBase(openaiBase = "https://api.openai.com") {
+  return String(openaiBase).replace(/\/+$/, "");
 }
+
+export function openaiWssBase(openaiBase = "https://api.openai.com") {
+  return openaiHttpsBase(openaiBase).replace(/^https:/i, "wss:");
+}
+
+export function openaiLiveSessionsUrl(openaiBase = "https://api.openai.com") {
+  return `${openaiHttpsBase(openaiBase)}/v1/live/sessions`;
+}
+
+/** Direct SIP host. EU residency uses sip-eu when OPENAI_BASE is the EU API. */
+export function openaiSipHost(openaiBase = "https://api.openai.com") {
+  const base = openaiHttpsBase(openaiBase).toLowerCase();
+  if (base.includes("eu.api.openai.com") || base.includes("sip-eu.api.openai.com")) {
+    return "sip-eu.api.openai.com";
+  }
+  return "sip.api.openai.com";
+}
+
+export function openaiSipUri(projectId, openaiBase = "https://api.openai.com") {
+  const id = String(projectId || "").trim() || "$OPENAI_PROJECT_ID";
+  return `sip:${id}@${openaiSipHost(openaiBase)};transport=tls`;
+}
+
+export function openaiLiveAcceptUrl(sessionId, openaiBase = "https://api.openai.com") {
+  return `${openaiLiveSessionsUrl(openaiBase)}/${encodeURIComponent(sessionId)}/accept`;
+}
+
+export function openaiLiveHangupUrl(sessionId, openaiBase = "https://api.openai.com") {
+  return `${openaiLiveSessionsUrl(openaiBase)}/${encodeURIComponent(sessionId)}/hangup`;
+}
+
+export function openaiLiveAttachUrl(sessionId, openaiBase = "https://api.openai.com") {
+  return `${openaiWssBase(openaiBase)}/v1/live/sessions/${encodeURIComponent(sessionId)}/attach`;
+}
+
+/** Default gpt-live. Emergency rollback: SIP_ENGINE=grok (or xai). */
+export function resolveSipEngine(env = process.env) {
+  const raw = String(env.SIP_ENGINE || "gpt-live").trim().toLowerCase();
+  if (raw === "grok" || raw === "xai") return "grok";
+  return "gpt-live";
+}
+
+export const OPENAI_SIP_WEBHOOK_PATH = "/api/openai/sip";
+export const OPENAI_SIP_INCOMING_EVENTS = [
+  "live.transport.incoming",
+  "live.call.incoming",
+  "realtime.call.incoming"
+];
 
 export function liveInputFromTranscript(linhas) {
   if (!Array.isArray(linhas) || !linhas.length) return undefined;
@@ -79,7 +126,7 @@ export function liveInputFromTranscript(linhas) {
 }
 
 /**
- * WebRTC Live session body. Omit `audio.format` — WebRTC negotiates it.
+ * Live session body for WebRTC and Direct SIP. Omit `audio.format` — the transport negotiates it.
  * `audio.output.speed` is 1.0 unless OPENAI_LIVE_SPEED overrides (0.25–1.5).
  */
 export function liveSessionConfig({
@@ -92,6 +139,7 @@ export function liveSessionConfig({
   input
 } = {}) {
   const session = {
+    type: "live",
     model,
     instructions,
     audio: {

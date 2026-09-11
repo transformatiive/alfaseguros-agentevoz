@@ -1,24 +1,34 @@
-// Agente de chamada por SIP (Grok Voice) — a linha Ringover da mesa.
-// GPT-Live-1 é o motor por omissão do browser; o SIP continua xAI até um follow-up
-// (mudar o tronco Ringover/Telnyx para sip.api.openai.com quebraria a mesa nesta PR).
-//
-// No browser é a página que segura o WebSocket, reproduz o áudio e no fim manda a
-// transcrição para extração. Ao telefone não há página: a Ringover entrega a chamada
-// à xAI, a xAI chama este webhook, e a partir daí é este módulo que faz o papel da
-// página — com uma diferença importante a nosso favor: o áudio nunca passa por nós.
-// Quem termina a perna SIP é a xAI, por isso não há amortecedor de reprodução nem
-// vigia de silêncio, que eram exatamente as duas fontes dos defeitos de 26/08.
+// Agente de chamada por SIP — GPT-Live Direct SIP por omissão (Ringover/Telnyx → OpenAI).
+// Áudio nunca passa por Alice: o tronco SIP fala com sip.api.openai.com; este processo
+// aceita o webhook, configura a sessão e segura o sideband (transcrição, end_call, hangup).
+// Rollback de emergência: SIP_ENGINE=grok (tronco xAI + POST /api/xai/call).
 
 import crypto from "node:crypto";
 import WebSocket from "ws";
 
-const MAX_CHAMADA_MS = 15 * 60 * 1000; // rede de segurança: nenhuma chamada fica pendurada a consumir
-const TOLERANCIA_RELOGIO_S = 300;
+import {
+  GPT_LIVE_USER_AGENT,
+  OPENAI_SIP_INCOMING_EVENTS,
+  OPENAI_SIP_WEBHOOK_PATH,
+  gptLiveGreetingCommentaryAppend,
+  gptLiveGreetingInstructionsAppend,
+  openaiLiveAcceptUrl,
+  openaiLiveAttachUrl,
+  openaiLiveHangupUrl,
+  openaiSipUri,
+  resolveSipEngine
+} from "./live-session.js";
 
-// A xAI envia webhook-id / webhook-timestamp / webhook-signature, que são os cabeçalhos
-// da norma Standard Webhooks, mas não publica o algoritmo. Implementamos o da norma e
-// FALHAMOS FECHADO: se divergir, as chamadas são recusadas e vê-se no log — o contrário
-// seria aceitar pedidos não autenticados num endpoint que abre chamadas pagas.
+const MAX_CHAMADA_MS = 15 * 60 * 1000;
+const TOLERANCIA_RELOGIO_S = 300;
+const WEBHOOK_DEDUP_MS = 10 * 60 * 1000;
+const SAUDACAO_FALLBACK_MS = 400;
+const HANGUP_DRAIN_MS = 5000;
+
+const EVENTOS_SIP_ENTRADA = new Set(OPENAI_SIP_INCOMING_EVENTS);
+
+export { OPENAI_SIP_WEBHOOK_PATH, openaiSipUri, resolveSipEngine };
+
 export function assinaturaValida(corpoBruto, cabecalhos, segredo) {
   const id = cabecalhos["webhook-id"];
   const ts = cabecalhos["webhook-timestamp"];
@@ -26,12 +36,11 @@ export function assinaturaValida(corpoBruto, cabecalhos, segredo) {
   if (!segredo || !id || !ts || !sig) return false;
 
   const idade = Math.abs(Date.now() / 1000 - Number(ts));
-  if (!Number.isFinite(idade) || idade > TOLERANCIA_RELOGIO_S) return false; // anti-repetição
+  if (!Number.isFinite(idade) || idade > TOLERANCIA_RELOGIO_S) return false;
 
   const chave = Buffer.from(String(segredo).replace(/^whsec_/, ""), "base64");
   const esperado = crypto.createHmac("sha256", chave).update(`${id}.${ts}.${corpoBruto}`).digest("base64");
 
-  // o cabeçalho pode trazer várias assinaturas separadas por espaço ("v1,aaa v1,bbb")
   return String(sig).split(" ").some(parte => {
     const [versao, valor] = parte.split(",");
     if (versao !== "v1" || !valor) return false;
@@ -41,39 +50,251 @@ export function assinaturaValida(corpoBruto, cabecalhos, segredo) {
   });
 }
 
-class ChamadaSip {
+export function assinarWebhook(corpoBruto, segredo, { id, ts } = {}) {
+  const webhookId = id || `wh_test_${crypto.randomBytes(8).toString("hex")}`;
+  const timestamp = String(ts ?? Math.floor(Date.now() / 1000));
+  const chave = Buffer.from(String(segredo).replace(/^whsec_/, ""), "base64");
+  const valor = crypto.createHmac("sha256", chave).update(`${webhookId}.${timestamp}.${corpoBruto}`).digest("base64");
+  return {
+    "content-type": "application/json",
+    "webhook-id": webhookId,
+    "webhook-timestamp": timestamp,
+    "webhook-signature": `v1,${valor}`
+  };
+}
+
+export function sessionIdDoEventoSip(ev) {
+  const data = ev?.data || {};
+  if (ev?.type === "realtime.call.incoming") {
+    // Realtime call_id is a different contract — only treat as Live if session_id is present.
+    return data.session_id || null;
+  }
+  return data.session_id || data.call_id || null;
+}
+
+export function cabecalhoSip(ev, nome = "From") {
+  const wanted = String(nome).toLowerCase();
+  const headers = ev?.data?.sip_headers || [];
+  return headers.find(h => String(h?.name || "").toLowerCase() === wanted)?.value || "";
+}
+
+function openaiHeaders(apiKey) {
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+    "User-Agent": GPT_LIVE_USER_AGENT
+  };
+}
+
+function httpFetch(cfg) {
+  return cfg.fetch || fetch;
+}
+
+function WsImpl(cfg) {
+  return cfg.WebSocket || WebSocket;
+}
+
+class ChamadaSipLive {
+  constructor(sessionId, deDe, cfg) {
+    this.sessionId = sessionId;
+    this.de = deDe;
+    this.cfg = cfg;
+    this.transcript = [];
+    this.liveIn = "";
+    this.liveOut = "";
+    this.terminada = false;
+    this.saudacaoEnviada = false;
+    this.diag = {
+      motor: "GPT-Live-1 (telefone)",
+      underruns: 0, cortes: 0, reconexoes: 0,
+      falsosVad: 0, dobresResp: 0, destravas: 0, limpezas: 0
+    };
+  }
+
+  async aceitar() {
+    const { openaiBase, openaiKey, session } = this.cfg;
+    const r = await httpFetch(this.cfg)(openaiLiveAcceptUrl(this.sessionId, openaiBase), {
+      method: "POST",
+      headers: openaiHeaders(openaiKey),
+      body: JSON.stringify({ session })
+    });
+    if (!r.ok) {
+      const detalhe = await r.text().catch(() => "");
+      throw new Error(`accept ${r.status} ${detalhe.slice(0, 300)}`);
+    }
+  }
+
+  ligarSideband() {
+    const { openaiBase, openaiKey } = this.cfg;
+    const url = openaiLiveAttachUrl(this.sessionId, openaiBase);
+    this.ws = new (WsImpl(this.cfg))(url, {
+      headers: { Authorization: `Bearer ${openaiKey}`, "User-Agent": GPT_LIVE_USER_AGENT }
+    });
+    this.ws.on("open", () => {
+      this.limiteSaudacao = setTimeout(() => this.saudar(), SAUDACAO_FALLBACK_MS);
+      this.limiteSaudacao.unref?.();
+    });
+    this.ws.on("message", d => {
+      try { this.evento(JSON.parse(d.toString())); } catch { /* frame não-JSON */ }
+    });
+    this.ws.on("close", () => this.finalizar());
+    this.ws.on("error", e => {
+      console.error(`[sip-live ${this.sessionId}] ws:`, e?.message || e);
+    });
+    this.limite = setTimeout(() => this.desligar("duração máxima"), MAX_CHAMADA_MS);
+    this.limite.unref?.();
+  }
+
+  enviar(o) {
+    if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === 1) {
+      this.ws.send(JSON.stringify(o));
+    }
+  }
+
+  saudar() {
+    if (this.saudacaoEnviada || this.terminada) return;
+    this.saudacaoEnviada = true;
+    clearTimeout(this.limiteSaudacao);
+    // Sessão já arrancou no accept — não enviar session.start. A saudação é a mesma do browser.
+    this.enviar(gptLiveGreetingInstructionsAppend(this.cfg.primeiraFala));
+    this.enviar(gptLiveGreetingCommentaryAppend());
+  }
+
+  despejarUser() {
+    const t = this.liveIn.trim();
+    this.liveIn = "";
+    if (t) this.transcript.push({ role: "user", text: t });
+  }
+
+  despejarAlice() {
+    const t = this.liveOut.trim();
+    this.liveOut = "";
+    if (t) this.transcript.push({ role: "assistant", text: t });
+  }
+
+  nomeFerramenta(ev) {
+    const inner = ev?.event || ev;
+    return inner?.name || inner?.item?.name || ev?.name || ev?.item?.name || "";
+  }
+
+  evento(ev) {
+    const t = ev.type;
+    if (t === "session.started") {
+      this.saudar();
+      return;
+    }
+    if (t === "session.input_transcript.delta" && ev.delta) {
+      this.liveIn += ev.delta;
+      return;
+    }
+    if (t === "session.input_transcript.done") {
+      if (ev.delta) this.liveIn += ev.delta;
+      if (ev.transcript) this.liveIn = ev.transcript;
+      this.despejarUser();
+      return;
+    }
+    if (t === "session.output_transcript.delta" && ev.delta) {
+      this.liveOut += ev.delta;
+      return;
+    }
+    if (t === "session.output_transcript.done") {
+      if (ev.delta) this.liveOut += ev.delta;
+      if (ev.transcript) this.liveOut = ev.transcript;
+      this.despejarAlice();
+      return;
+    }
+    if (t === "response.event") {
+      const inner = ev.event || {};
+      const innerT = inner.type || "";
+      const nome = this.nomeFerramenta(ev);
+      if (nome === "end_call" && (
+        innerT === "response.function_call_arguments.done" ||
+        innerT === "response.output_item.done" ||
+        inner.item?.type === "function_call"
+      )) {
+        this.despejarUser();
+        this.despejarAlice();
+        this.desligar("end_call");
+      }
+      return;
+    }
+    if (t === "session.closed") {
+      this.finalizar();
+      return;
+    }
+    if (t === "error") {
+      console.error(`[sip-live ${this.sessionId}] erro:`, JSON.stringify(ev.error || ev).slice(0, 300));
+    }
+  }
+
+  async desligar(motivo) {
+    if (this.terminada) return;
+    console.log(`[sip-live ${this.sessionId}] a desligar (${motivo})`);
+    try {
+      await httpFetch(this.cfg)(openaiLiveHangupUrl(this.sessionId, this.cfg.openaiBase), {
+        method: "POST",
+        headers: openaiHeaders(this.cfg.openaiKey)
+      });
+    } catch (e) {
+      console.error(`[sip-live ${this.sessionId}] hangup:`, e?.message || e);
+    }
+    this.limiteDrain = setTimeout(() => this.finalizar(), HANGUP_DRAIN_MS);
+    this.limiteDrain.unref?.();
+  }
+
+  finalizar() {
+    if (this.terminada) return;
+    this.terminada = true;
+    clearTimeout(this.limite);
+    clearTimeout(this.limiteSaudacao);
+    clearTimeout(this.limiteDrain);
+    this.despejarUser();
+    this.despejarAlice();
+    try { this.ws?.close(); } catch { /* já fechado */ }
+    this.cfg.aoTerminar(this.sessionId);
+    if (!this.transcript.length) {
+      console.log(`[sip-live ${this.sessionId}] sem transcrição, nada a registar`);
+      return;
+    }
+    this.cfg.extrair(this.transcript, { ...this.diag, telefone_origem: this.de }, "alfa-voz-sip")
+      .catch(e => console.error(`[sip-live ${this.sessionId}] extração:`, e?.message || e));
+  }
+}
+
+class ChamadaSipGrok {
   constructor(callId, deDe, cfg) {
     this.callId = callId;
-    this.de = deDe; // número de quem liga, para o resultado
+    this.de = deDe;
     this.cfg = cfg;
     this.transcript = [];
     this.linhasUser = new Map();
     this.terminada = false;
-    this.diag = { motor: "SpaceX.ai Grok Live 2 (telefone)", underruns: 0, cortes: 0, reconexoes: 0,
-      falsosVad: 0, dobresResp: 0, destravas: 0, limpezas: 0 };
+    this.diag = {
+      motor: "SpaceX.ai Grok Live 2 (telefone)",
+      underruns: 0, cortes: 0, reconexoes: 0,
+      falsosVad: 0, dobresResp: 0, destravas: 0, limpezas: 0
+    };
   }
 
   ligar() {
     const { xaiBase, xaiKey } = this.cfg;
     const url = `${xaiBase.replace("https://", "wss://")}/v1/realtime?call_id=${encodeURIComponent(this.callId)}`;
-    this.ws = new WebSocket(url, { headers: { Authorization: `Bearer ${xaiKey}` } });
+    this.ws = new (WsImpl(this.cfg))(url, { headers: { Authorization: `Bearer ${xaiKey}` } });
     this.ws.on("open", () => this.configurar());
-    this.ws.on("message", d => { try { this.evento(JSON.parse(d.toString())); } catch { /* frame não-JSON: ignorar */ } });
+    this.ws.on("message", d => { try { this.evento(JSON.parse(d.toString())); } catch { /* frame não-JSON */ } });
     this.ws.on("close", () => this.finalizar());
     this.ws.on("error", e => { console.error(`[sip ${this.callId}] ws:`, e?.message || e); });
     this.limite = setTimeout(() => this.desligar("duração máxima"), MAX_CHAMADA_MS);
+    this.limite.unref?.();
   }
 
-  enviar(o) { if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(o)); }
+  enviar(o) { if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === 1) this.ws.send(JSON.stringify(o)); }
 
   configurar() {
     const { instrucoes, voz, primeiraFala } = this.cfg;
-    // voz em separado, como no browser: um update com instruções não pode arrastar a voz
     this.enviar({ type: "session.update", session: { voice: voz } });
     this.enviar({ type: "session.update", session: {
       instructions: instrucoes,
-      // ao telefone o áudio é mais estreito e mais ruidoso do que no browser: o silêncio
-      // de fim de turno é mais difícil de detetar, por isso damos-lhe mais margem
       turn_detection: { type: "server_vad", threshold: 0.9, silence_duration_ms: 800, prefix_padding_ms: 333, idle_timeout_ms: 10000 },
       reasoning: { effort: "none" },
       audio: { input: { transcription: { language_hint: "pt-PT", keyterms:
@@ -90,8 +311,6 @@ class ChamadaSip {
 
   evento(ev) {
     const t = ev.type;
-    // a transcrição do cliente chega em pedaços (.updated) e fecha em .completed:
-    // guardamos por item_id para a linha ser substituída e não duplicada
     if ((t === "conversation.item.input_audio_transcription.completed" ||
          t === "conversation.item.input_audio_transcription.updated") && ev.transcript) {
       this.linhasUser.set(ev.item_id, ev.transcript.trim());
@@ -100,7 +319,6 @@ class ChamadaSip {
       this.despejarUser();
       this.transcript.push({ role: "assistant", text: ev.transcript.trim() });
     }
-    // o fim de chamada pode chegar em qualquer um destes dois formatos
     const nome = ev.name || ev.item?.name;
     if (nome === "end_call" && (t === "response.function_call_arguments.done" || t === "response.output_item.done")) {
       this.despejarUser();
@@ -118,7 +336,7 @@ class ChamadaSip {
     if (this.terminada) return;
     console.log(`[sip ${this.callId}] a desligar (${motivo})`);
     try {
-      await fetch(`${this.cfg.xaiBase}/v1/realtime/calls/${encodeURIComponent(this.callId)}/hangup`,
+      await httpFetch(this.cfg)(`${this.cfg.xaiBase}/v1/realtime/calls/${encodeURIComponent(this.callId)}/hangup`,
         { method: "POST", headers: { Authorization: `Bearer ${this.cfg.xaiKey}` } });
     } catch (e) { console.error(`[sip ${this.callId}] hangup:`, e?.message || e); }
     try { this.ws?.close(); } catch { /* já fechado */ }
@@ -126,7 +344,7 @@ class ChamadaSip {
   }
 
   finalizar() {
-    if (this.terminada) return; // o close e o desligar podem chegar os dois
+    if (this.terminada) return;
     this.terminada = true;
     clearTimeout(this.limite);
     this.despejarUser();
@@ -137,12 +355,95 @@ class ChamadaSip {
   }
 }
 
+export function sipHealth(cfg) {
+  const engine = cfg.engine || resolveSipEngine();
+  if (engine === "grok") {
+    return {
+      engine: "grok",
+      model: cfg.grokModel || "grok-voice-think-fast-2.0",
+      voice: cfg.voz || "ara",
+      grok: !!(cfg.xaiKey && cfg.segredoWebhook)
+    };
+  }
+  const audio = cfg.session?.audio?.output || {};
+  return {
+    engine: "gpt-live",
+    model: cfg.session?.model || "gpt-live-1",
+    voice: audio.voice || "marin",
+    speed: audio.speed ?? 1,
+    configured: !!(cfg.openaiKey && cfg.openaiWebhookSecret),
+    webhook: OPENAI_SIP_WEBHOOK_PATH,
+    sipUri: openaiSipUri(cfg.openaiProjectId, cfg.openaiBase),
+    grokRollback: !!(cfg.xaiKey && cfg.segredoWebhook)
+  };
+}
+
+function limparDedup(seen, agora) {
+  for (const [id, ts] of seen) if (agora - ts > WEBHOOK_DEDUP_MS) seen.delete(id);
+}
+
 export function registarRotasSip(app, cfg) {
   const emCurso = new Map();
+  const vistos = new Map();
   const aoTerminar = id => emCurso.delete(id);
+  const engine = cfg.engine || resolveSipEngine();
+
+  const webhookLive = async (req, res) => {
+    if (engine !== "gpt-live") return res.status(503).json({ error: "sip gpt-live inactivo (SIP_ENGINE=grok)" });
+    if (!cfg.openaiKey || !cfg.openaiWebhookSecret) return res.status(503).json({ error: "sip gpt-live indisponível" });
+    const corpo = req.rawBody?.toString("utf8") ?? "";
+    if (!assinaturaValida(corpo, req.headers, cfg.openaiWebhookSecret)) {
+      console.error("[sip-live] assinatura inválida — pedido recusado");
+      return res.status(401).json({ error: "assinatura inválida" });
+    }
+
+    const webhookId = req.headers["webhook-id"];
+    const agora = Date.now();
+    limparDedup(vistos, agora);
+    if (webhookId && vistos.has(webhookId)) return res.status(200).json({ ok: true, dedup: "webhook-id" });
+    if (webhookId) vistos.set(webhookId, agora);
+
+    const ev = req.body || {};
+    if (!EVENTOS_SIP_ENTRADA.has(ev.type)) return res.status(204).end();
+    if (ev.type === "live.transport.incoming" && ev.data?.type && ev.data.type !== "sip") {
+      return res.status(204).end();
+    }
+
+    const sessionId = sessionIdDoEventoSip(ev);
+    if (!sessionId) {
+      if (ev.type === "realtime.call.incoming") {
+        console.log("[sip-live] realtime.call.incoming sem session_id — ignorado (não aceitar pelo Realtime API)");
+        return res.status(204).end();
+      }
+      return res.status(400).json({ error: "sem session_id" });
+    }
+    if (emCurso.has(sessionId)) return res.status(200).json({ ok: true, dedup: "session" });
+
+    const de = cabecalhoSip(ev, "From");
+    console.log(`[sip-live ${sessionId}] chamada recebida de ${de || "(desconhecido)"} (${ev.type})`);
+    const chamada = new ChamadaSipLive(sessionId, de, { ...cfg, aoTerminar });
+    emCurso.set(sessionId, chamada);
+    try {
+      await chamada.aceitar();
+    } catch (e) {
+      emCurso.delete(sessionId);
+      console.error(`[sip-live ${sessionId}] accept:`, e?.message || e);
+      return res.status(502).json({ error: "accept falhou" });
+    }
+    chamada.ligarSideband();
+    res.status(200).json({ ok: true, session_id: sessionId });
+  };
+
+  app.post(OPENAI_SIP_WEBHOOK_PATH, (req, res) => {
+    webhookLive(req, res).catch(e => {
+      console.error("[sip-live] webhook:", e?.message || e);
+      if (!res.headersSent) res.status(500).json({ error: "sip webhook" });
+    });
+  });
 
   app.post("/api/xai/call", (req, res) => {
-    if (!cfg.xaiKey || !cfg.segredoWebhook) return res.status(503).json({ error: "sip indisponível" });
+    // Mantida durante o cutover e como rollback: só atende se o tronco ainda apontar à xAI.
+    if (!cfg.xaiKey || !cfg.segredoWebhook) return res.status(503).json({ error: "sip grok indisponível" });
     if (!assinaturaValida(req.rawBody?.toString("utf8") ?? "", req.headers, cfg.segredoWebhook)) {
       console.error("[sip] assinatura inválida — pedido recusado");
       return res.status(401).json({ error: "assinatura inválida" });
@@ -152,15 +453,15 @@ export function registarRotasSip(app, cfg) {
 
     const callId = ev.data?.call_id;
     if (!callId) return res.status(400).json({ error: "sem call_id" });
-    if (emCurso.has(callId)) return res.status(200).json({ ok: true }); // reentrega do webhook
+    if (emCurso.has(callId)) return res.status(200).json({ ok: true });
 
     const de = (ev.data?.sip_headers || []).find(h => h.name === "From")?.value || "";
     console.log(`[sip ${callId}] chamada recebida de ${de || "(desconhecido)"}`);
-    const chamada = new ChamadaSip(callId, de, { ...cfg, aoTerminar });
+    const chamada = new ChamadaSipGrok(callId, de, { ...cfg, aoTerminar });
     emCurso.set(callId, chamada);
     chamada.ligar();
-    res.status(200).json({ ok: true }); // responder já: a xAI não deve esperar pelo nosso WebSocket
+    res.status(200).json({ ok: true });
   });
 
-  return { emCurso };
+  return { emCurso, vistos, engine };
 }

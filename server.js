@@ -1,12 +1,12 @@
-// Alice (Alfaseguros) — browser default: GPT-Live-1 (ChatGPT Voice) por WebRTC.
-// SIP Ringover continua xAI Grok (sip-agent.js) até um follow-up GPT-Live SIP.
-// Endpoints: GET / (página), POST /api/session (Live SDP ou Grok/Eleven token), POST /api/extract
+// Alice (Alfaseguros) — browser e SIP default: GPT-Live-1 (ChatGPT Voice).
+// SIP: Direct SIP OpenAI + sideband (sip-agent.js). Rollback: SIP_ENGINE=grok.
+// Endpoints: GET / (página), POST /api/session, POST /api/extract, POST /api/openai/sip
 import express from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { registarRotasSip } from "./sip-agent.js";
+import { registarRotasSip, sipHealth } from "./sip-agent.js";
 import {
   GPT_LIVE_USER_AGENT,
   liveInputFromTranscript,
@@ -15,11 +15,12 @@ import {
   resolveGptLiveDelegateModel,
   resolveGptLiveModel,
   resolveGptLiveSpeed,
-  resolveGptLiveVoice
+  resolveGptLiveVoice,
+  resolveSipEngine
 } from "./live-session.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-app.use(express.json({ limit: "2mb", verify: (req, _res, buf) => { req.rawBody = buf; } })); // rawBody: a assinatura do webhook da xAI é sobre os bytes originais
+app.use(express.json({ limit: "2mb", verify: (req, _res, buf) => { req.rawBody = buf; } })); // rawBody: assinatura Standard Webhooks (OpenAI / xAI)
 app.use(express.static(path.join(__dirname, "public")));
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -35,7 +36,10 @@ const ELEVEN_AGENT_ID = process.env.ELEVENLABS_AGENT_ID;
 const ELEVEN_BASE = process.env.ELEVENLABS_BASE || "https://api.elevenlabs.io";
 const XAI_API_KEY = process.env.XAI_API_KEY;
 const XAI_BASE = process.env.XAI_BASE || "https://api.x.ai";
-const XAI_WEBHOOK_SECRET = process.env.XAI_WEBHOOK_SECRET; // devolvido pela xAI ao registar o número; sem ele a rota SIP fica inativa
+const XAI_WEBHOOK_SECRET = process.env.XAI_WEBHOOK_SECRET; // rollback SIP_ENGINE=grok; sem ele a rota xAI fica inativa
+const OPENAI_WEBHOOK_SECRET = process.env.OPENAI_WEBHOOK_SECRET; // dashboard OpenAI → POST /api/openai/sip
+const OPENAI_PROJECT_ID = process.env.OPENAI_PROJECT_ID; // sip:$OPENAI_PROJECT_ID@sip.api.openai.com;transport=tls
+const SIP_ENGINE = resolveSipEngine(process.env);
 const GROK_MODEL = process.env.GROK_MODEL || "grok-voice-think-fast-2.0"; // fixado: "latest" muda debaixo dos pés
 const GROK_VOICE = process.env.GROK_VOICE || "ara"; // "eve" é a voz por omissão da xAI, pensada para escuta longa; a Alfaseguros achou-a sem energia
 const PROMPT = fs.readFileSync(path.join(__dirname, "prompt_alfa.md"), "utf8");
@@ -310,11 +314,20 @@ app.post("/api/extract", async (req, res) => {
   }
 });
 
-registarRotasSip(app, {
+const sipCfg = {
+  engine: SIP_ENGINE,
+  openaiBase: OPENAI_BASE,
+  openaiKey: OPENAI_API_KEY,
+  openaiWebhookSecret: OPENAI_WEBHOOK_SECRET,
+  openaiProjectId: OPENAI_PROJECT_ID,
+  session: sessionConfig(),
+  primeiraFala: FIRST_MESSAGE,
   xaiBase: XAI_BASE, xaiKey: XAI_API_KEY, segredoWebhook: XAI_WEBHOOK_SECRET,
-  instrucoes: GROK_INSTRUCTIONS, voz: GROK_VOICE, primeiraFala: FIRST_MESSAGE,
+  grokModel: GROK_MODEL,
+  instrucoes: GROK_INSTRUCTIONS, voz: GROK_VOICE,
   extrair: extrairEEnviar
-});
+};
+registarRotasSip(app, sipCfg);
 
 app.get("/health", (_, res) => res.json({
   ok: true,
@@ -322,19 +335,14 @@ app.get("/health", (_, res) => res.json({
   model: LIVE_MODEL, // advertised default spoken engine (browser GPT-Live)
   voice: VOICE, // advertised default voice: marin (not Ara)
   speed: LIVE_SPEED,
-  grokVoice: GROK_VOICE, // SIP Ringover / browser Grok only — not the advertised default
+  grokVoice: GROK_VOICE, // browser Grok / SIP_ENGINE=grok rollback — not the advertised default
   motores: {
     grok: !!XAI_API_KEY,
     eleven: !!(ELEVEN_API_KEY && ELEVEN_AGENT_ID),
     openai: !!OPENAI_API_KEY,
     gptLive: !!OPENAI_API_KEY
   },
-  sip: {
-    engine: "grok",
-    grok: !!(XAI_API_KEY && XAI_WEBHOOK_SECRET),
-    voice: GROK_VOICE,
-    note: "Ringover SIP remains xAI Grok until a GPT-Live SIP follow-up"
-  }
+  sip: sipHealth(sipCfg)
 }));
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`alfa-voz-openai on :${port} (${LIVE_MODEL} ${VOICE} @${LIVE_SPEED}, sip grok ${GROK_VOICE})`));
+app.listen(port, () => console.log(`alfa-voz-openai on :${port} (${LIVE_MODEL} ${VOICE} @${LIVE_SPEED}, sip ${SIP_ENGINE})`));
