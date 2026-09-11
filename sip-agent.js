@@ -12,6 +12,7 @@ import {
   OPENAI_SIP_WEBHOOK_PATH,
   gptLiveGreetingCommentaryAppend,
   gptLiveGreetingInstructionsAppend,
+  liveSessionConfigForSipAccept,
   openaiLiveAcceptUrl,
   openaiLiveAttachUrl,
   openaiLiveHangupUrl,
@@ -116,7 +117,7 @@ class ChamadaSipLive {
     const r = await httpFetch(this.cfg)(openaiLiveAcceptUrl(this.sessionId, openaiBase), {
       method: "POST",
       headers: openaiHeaders(openaiKey),
-      body: JSON.stringify({ session })
+      body: JSON.stringify({ session: liveSessionConfigForSipAccept(session) })
     });
     if (!r.ok) {
       const detalhe = await r.text().catch(() => "");

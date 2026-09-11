@@ -13,6 +13,7 @@ import {
   GPT_LIVE_BRAZILIAN_VOICES,
   liveInputFromTranscript,
   liveSessionConfig,
+  liveSessionConfigForSipAccept,
   openaiLiveSessionsUrl,
   resolveGptLiveModel,
   resolveGptLiveSpeed,
@@ -59,6 +60,14 @@ test("live session shape is WebRTC GPT-Live (no audio.format, speed 1.0, end_cal
   assert.equal(session.audio.output.voice, "marin");
   assert.equal(session.audio.output.speed, 1.0);
   assert.equal(session.audio.format, undefined);
+  const sipAccept = liveSessionConfigForSipAccept({
+    instructions: "Alice pt-PT",
+    delegateInstructions: "end_call only"
+  });
+  assert.equal(sipAccept.audio.output.voice, "marin");
+  assert.equal("speed" in sipAccept.audio.output, false);
+  const omitted = liveSessionConfig({ omitSpeed: true });
+  assert.equal("speed" in omitted.audio.output, false);
   assert.equal(session.delegation.type, "responses");
   assert.equal(session.delegation.responses.tools[0].name, "end_call");
   assert.equal(openaiLiveSessionsUrl("https://api.openai.com/"), "https://api.openai.com/v1/live/sessions");
@@ -102,6 +111,7 @@ test("README documents GPT-Live SIP cutover and webhook path", () => {
   assert.match(readme, /Ringover/);
   assert.match(readme, /SIP_ENGINE/);
   assert.match(sipSrc, /GPT-Live Direct SIP/);
+  assert.match(sipSrc, /liveSessionConfigForSipAccept/);
   assert.doesNotMatch(sipSrc, /until a follow-up/i);
 });
 
