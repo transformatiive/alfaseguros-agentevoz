@@ -1,4 +1,6 @@
-// Agente de chamada por SIP (Grok Voice).
+// Agente de chamada por SIP (Grok Voice) — a linha Ringover da mesa.
+// GPT-Live-1 é o motor por omissão do browser; o SIP continua xAI até um follow-up
+// (mudar o tronco Ringover/Telnyx para sip.api.openai.com quebraria a mesa nesta PR).
 //
 // No browser é a página que segura o WebSocket, reproduz o áudio e no fim manda a
 // transcrição para extração. Ao telefone não há página: a Ringover entrega a chamada

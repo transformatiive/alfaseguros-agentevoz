@@ -21,9 +21,9 @@ const pares = [
   ["ficheiro", "arquivo"]
 ];
 
-test("Grok voice default is ara via GROK_VOICE; OpenAI marin stays on VOICE", () => {
+test("Grok voice default is ara via GROK_VOICE; advertised OpenAI voice is marin via GPT-Live", () => {
   assert.match(serverSrc, /const GROK_VOICE = process\.env\.GROK_VOICE \|\| "ara"/);
-  assert.match(serverSrc, /const VOICE = process\.env\.VOICE \|\| "marin"/);
+  assert.match(serverSrc, /const VOICE = resolveGptLiveVoice\(process\.env\)/);
   assert.match(serverSrc, /instrucoes: GROK_INSTRUCTIONS, voz: GROK_VOICE/);
   assert.equal((serverSrc.match(/const GROK_INSTRUCTIONS/g) || []).length, 1);
 });
@@ -39,7 +39,7 @@ test("SIP uses app GROK_VOICE in session.update, no parallel voice override", ()
 test("Grok/SIP instructions mandate PT-PT and forbid PT-BR with concrete pairs", () => {
   const grokBlock = serverSrc.slice(
     serverSrc.indexOf("const GROK_INSTRUCTIONS"),
-    serverSrc.indexOf("const VOICES")
+    serverSrc.indexOf("const LIVE_DELEGATE_INSTRUCTIONS")
   );
   assert.match(grokBlock, /pt-PT/);
   assert.match(grokBlock, /português do Brasil/);
@@ -80,8 +80,11 @@ test("/health reports OpenAI voice and GROK_VOICE separately", async () => {
     const body = await r.json();
     assert.equal(r.status, 200);
     assert.equal(body.ok, true);
+    assert.equal(body.model, "gpt-live-1");
     assert.equal(body.voice, "marin");
+    assert.equal(body.speed, 1.0);
     assert.equal(body.grokVoice, "ara");
+    assert.equal(body.sip.engine, "grok");
     assert.equal(body.sip.voice, "ara");
   } finally {
     child.kill("SIGTERM");
