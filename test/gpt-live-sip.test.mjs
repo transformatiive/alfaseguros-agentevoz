@@ -11,6 +11,7 @@ import {
   DEFAULT_GPT_LIVE_SPEED,
   DEFAULT_GPT_LIVE_VOICE,
   liveSessionConfig,
+  liveSessionConfigForSipAccept,
   openaiLiveAcceptUrl,
   openaiLiveAttachUrl,
   openaiLiveHangupUrl,
@@ -171,6 +172,19 @@ test("accept session matches browser Live defaults (type live, marin, speed 1, n
   assert.equal(SESSION.delegation.responses.tools[0].name, "end_call");
 });
 
+test("SIP accept payload omits audio.output.speed (voice marin only)", () => {
+  const fromOpts = liveSessionConfigForSipAccept({
+    instructions: "Alice pt-PT",
+    delegateInstructions: "end_call only"
+  });
+  assert.equal(fromOpts.audio.output.voice, DEFAULT_GPT_LIVE_VOICE);
+  assert.equal("speed" in fromOpts.audio.output, false);
+  const fromSession = liveSessionConfigForSipAccept(SESSION);
+  assert.equal(fromSession.audio.output.voice, DEFAULT_GPT_LIVE_VOICE);
+  assert.equal("speed" in fromSession.audio.output, false);
+  assert.equal(SESSION.audio.output.speed, DEFAULT_GPT_LIVE_SPEED);
+});
+
 test("session_id from Live webhooks; realtime.call.incoming ignored without session_id", () => {
   assert.equal(sessionIdDoEventoSip(incoming()), "sess_sip_1");
   assert.equal(sessionIdDoEventoSip(incoming({ type: "live.call.incoming" })), "sess_sip_1");
@@ -208,7 +222,8 @@ test("live.transport.incoming accepts, attaches sideband, greets, does not sessi
     assert.equal(session.type, "live");
     assert.equal(session.model, "gpt-live-1");
     assert.equal(session.audio.output.voice, "marin");
-    assert.equal(session.audio.output.speed, 1);
+    assert.equal("speed" in session.audio.output, false);
+    assert.equal(session.audio.output.speed, undefined);
     assert.equal(session.audio.format, undefined);
     assert.equal(session.delegation.type, "responses");
     assert.match(session.instructions, /Alice pt-PT/);

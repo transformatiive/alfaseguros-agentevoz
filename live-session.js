@@ -127,12 +127,14 @@ export function liveInputFromTranscript(linhas) {
 
 /**
  * Live session body for WebRTC and Direct SIP. Omit `audio.format` — the transport negotiates it.
- * `audio.output.speed` is 1.0 unless OPENAI_LIVE_SPEED overrides (0.25–1.5).
+ * Browser WebRTC may pass `audio.output.speed` (1.0 unless OPENAI_LIVE_SPEED, 0.25–1.5).
+ * Direct SIP accept rejects `speed` — use `liveSessionConfigForSipAccept` / `{ omitSpeed: true }`.
  */
 export function liveSessionConfig({
   model = DEFAULT_GPT_LIVE_MODEL,
   voice = DEFAULT_GPT_LIVE_VOICE,
   speed = DEFAULT_GPT_LIVE_SPEED,
+  omitSpeed = false,
   instructions,
   delegateModel = DEFAULT_GPT_LIVE_DELEGATE_MODEL,
   delegateInstructions,
@@ -143,7 +145,7 @@ export function liveSessionConfig({
     model,
     instructions,
     audio: {
-      output: { voice, speed }
+      output: omitSpeed ? { voice } : { voice, speed }
     },
     delegation: {
       type: "responses",
@@ -157,6 +159,24 @@ export function liveSessionConfig({
   };
   if (input) session.input = input;
   return session;
+}
+
+/**
+ * Direct SIP `POST /v1/live/sessions/{id}/accept` body.
+ * OpenAI rejects `session.audio.output.speed` (`unknown_parameter`); voice only (marin).
+ * Accepts liveSessionConfig() options or an already-built session (does not mutate it).
+ */
+export function liveSessionConfigForSipAccept(sessionOrOpts = {}) {
+  if (!sessionOrOpts) return sessionOrOpts;
+  if (sessionOrOpts.audio?.output) {
+    const output = { ...sessionOrOpts.audio.output };
+    delete output.speed;
+    return {
+      ...sessionOrOpts,
+      audio: { ...sessionOrOpts.audio, output }
+    };
+  }
+  return liveSessionConfig({ ...sessionOrOpts, omitSpeed: true });
 }
 
 export function gptLiveGreetingSpeakInstructions(firstMessage) {
