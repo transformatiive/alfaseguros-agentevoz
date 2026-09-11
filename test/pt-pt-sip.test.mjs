@@ -28,12 +28,12 @@ test("Grok voice default is ara via GROK_VOICE; advertised OpenAI voice is marin
   assert.equal((serverSrc.match(/const GROK_INSTRUCTIONS/g) || []).length, 1);
 });
 
-test("SIP uses app GROK_VOICE in session.update, no parallel voice override", () => {
+test("Grok rollback SIP uses GROK_VOICE in session.update; Live SIP defaults marin", () => {
   assert.match(sipSrc, /session: \{ voice: voz \}/);
-  assert.doesNotMatch(sipSrc, /marin/);
-  assert.doesNotMatch(sipSrc, /GROK_VOICE\s*=/);
   assert.match(sipSrc, /language_hint: "pt-PT"/);
   assert.doesNotMatch(sipSrc, /pt-BR/);
+  assert.doesNotMatch(sipSrc, /GROK_VOICE\s*=/);
+  assert.match(sipSrc, /voice: audio\.voice \|\| "marin"/);
 });
 
 test("Grok/SIP instructions mandate PT-PT and forbid PT-BR with concrete pairs", () => {
@@ -84,8 +84,10 @@ test("/health reports OpenAI voice and GROK_VOICE separately", async () => {
     assert.equal(body.voice, "marin");
     assert.equal(body.speed, 1.0);
     assert.equal(body.grokVoice, "ara");
-    assert.equal(body.sip.engine, "grok");
-    assert.equal(body.sip.voice, "ara");
+    assert.equal(body.sip.engine, "gpt-live");
+    assert.equal(body.sip.voice, "marin");
+    assert.equal(body.sip.model, "gpt-live-1");
+    assert.equal(body.sip.speed, 1);
   } finally {
     child.kill("SIGTERM");
     await new Promise(resolve => child.once("exit", resolve));

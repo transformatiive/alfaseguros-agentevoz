@@ -54,6 +54,7 @@ test("live session shape is WebRTC GPT-Live (no audio.format, speed 1.0, end_cal
     instructions: "Alice pt-PT",
     delegateInstructions: "end_call only"
   });
+  assert.equal(session.type, "live");
   assert.equal(session.model, "gpt-live-1");
   assert.equal(session.audio.output.voice, "marin");
   assert.equal(session.audio.output.speed, 1.0);
@@ -74,7 +75,8 @@ test("server wires Live SDP exchange; advertised voice is marin not ara", () => 
   assert.match(serverSrc, /speed: LIVE_SPEED/);
   assert.match(serverSrc, /instrucoes: GROK_INSTRUCTIONS, voz: GROK_VOICE/);
   assert.match(serverSrc, /const GROK_VOICE = process\.env\.GROK_VOICE \|\| "ara"/);
-  assert.match(serverSrc, /sip\.engine.*grok|engine: "grok"/);
+  assert.match(serverSrc, /resolveSipEngine/);
+  assert.match(serverSrc, /sipHealth/);
   assert.doesNotMatch(serverSrc, /gpt-realtime-2\.1/);
   assert.doesNotMatch(serverSrc, /\$\{OPENAI_BASE\}\/v1\/realtime\/client_secrets/);
 });
@@ -88,19 +90,22 @@ test("browser default is GPT-Live WebRTC, not Grok/Ara", () => {
   assert.doesNotMatch(html, /\/v1\/realtime\/calls/);
 });
 
-test("README documents SIP remaining Grok and Live Railway checklist", () => {
+test("README documents GPT-Live SIP cutover and webhook path", () => {
   assert.match(readme, /gpt-live-1/);
   assert.match(readme, /marin/);
   assert.match(readme, /1\.0/);
   assert.match(readme, /SIP/);
-  assert.match(readme, /Grok/);
   assert.match(readme, /OPENAI_LIVE_MODEL/);
+  assert.match(readme, /OPENAI_WEBHOOK_SECRET/);
+  assert.match(readme, /\/api\/openai\/sip/);
+  assert.match(readme, /sip\.api\.openai.com/);
   assert.match(readme, /Ringover/);
-  assert.match(readme, /follow-up/i);
-  assert.match(sipSrc, /follow-up/);
+  assert.match(readme, /SIP_ENGINE/);
+  assert.match(sipSrc, /GPT-Live Direct SIP/);
+  assert.doesNotMatch(sipSrc, /until a follow-up/i);
 });
 
-test("/health advertises gpt-live-1 marin 1.0; SIP still grok/ara", async () => {
+test("/health advertises gpt-live-1 marin 1.0; SIP default is gpt-live not grok", async () => {
   const port = String(18865 + Math.floor(Math.random() * 20));
   const child = spawn(process.execPath, ["server.js"], {
     cwd: root,
@@ -130,9 +135,12 @@ test("/health advertises gpt-live-1 marin 1.0; SIP still grok/ara", async () => 
     assert.equal(body.voice, "marin");
     assert.equal(body.speed, 1.0);
     assert.equal(body.grokVoice, "ara");
-    assert.equal(body.sip.engine, "grok");
-    assert.equal(body.sip.voice, "ara");
-    assert.match(body.sip.note, /Grok/);
+    assert.equal(body.sip.engine, "gpt-live");
+    assert.equal(body.sip.model, "gpt-live-1");
+    assert.equal(body.sip.voice, "marin");
+    assert.equal(body.sip.speed, 1);
+    assert.equal(body.sip.webhook, "/api/openai/sip");
+    assert.equal(body.sip.note, undefined);
     assert.equal(body.motores.gptLive, false);
 
     const session = await fetch(`http://127.0.0.1:${port}/api/session`, {
