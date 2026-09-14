@@ -53,6 +53,25 @@ npm test
 - `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID`
 - `RESULT_WEBHOOK` (n8n; `""` desativa)
 
+### Transcrição: turnos
+
+A API GPT-Live não marca turnos — o schema diz, sobre os `session.*_transcript.delta`,
+"these events do not define complete turns or include a transcript-done event". Os turnos
+são reconstruídos por nós a partir dos `start_ms`/`end_ms` de cada fragmento, como o guia
+manda ("Use transcript timestamps to group nearby fragments from the same speaker"). O
+limiar (`INTERVALO_TURNO_MS`, 2 s) é escolha nossa: o guia diz explicitamente que "any gap
+threshold is an application choice to test". Uma interrupção não parte a fala de quem
+estava a falar. Ver `turnos.js`.
+
+Sem isto a transcrição chegava à extração em dois blocos — tudo o que o cliente disse,
+depois tudo o que a Alice disse — e os campos que dependem de ligar uma resposta à
+pergunta (`cliente_existente`, entre outros) saíam vazios ou errados.
+
+### Contactos
+
+O email é limpo de espaços e validado na forma; se não validar, fica o que foi dito e o
+consultor é avisado em `campos_por_confirmar`. Ver `email.js`.
+
 ### Telefone de contacto
 
 O número registado vem do cabeçalho SIP `From` (dado da rede, não passa pelo modelo

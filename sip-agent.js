@@ -6,6 +6,7 @@
 import crypto from "node:crypto";
 import WebSocket from "ws";
 
+import { montarTurnos } from "./turnos.js";
 import {
   GPT_LIVE_USER_AGENT,
   OPENAI_SIP_INCOMING_EVENTS,
@@ -100,9 +101,9 @@ class ChamadaSipLive {
     this.sessionId = sessionId;
     this.de = deDe;
     this.cfg = cfg;
-    this.transcript = [];
-    this.liveIn = "";
-    this.liveOut = "";
+    // Fragmentos crus, com os tempos: os turnos só se montam no fim, quando já não
+    // podem chegar fragmentos atrasados a mudar o agrupamento. Ver turnos.js.
+    this.fragmentos = [];
     this.terminada = false;
     this.saudacaoEnviada = false;
     this.diag = {
@@ -161,16 +162,9 @@ class ChamadaSipLive {
     this.enviar(gptLiveGreetingCommentaryAppend());
   }
 
-  despejarUser() {
-    const t = this.liveIn.trim();
-    this.liveIn = "";
-    if (t) this.transcript.push({ role: "user", text: t });
-  }
-
-  despejarAlice() {
-    const t = this.liveOut.trim();
-    this.liveOut = "";
-    if (t) this.transcript.push({ role: "assistant", text: t });
+  registarFragmento(role, ev) {
+    if (typeof ev.delta !== "string" || ev.delta === "") return;
+    this.fragmentos.push({ role, delta: ev.delta, start_ms: ev.start_ms, end_ms: ev.end_ms });
   }
 
   nomeFerramenta(ev) {
@@ -184,24 +178,22 @@ class ChamadaSipLive {
       this.saudar();
       return;
     }
-    if (t === "session.input_transcript.delta" && ev.delta) {
-      this.liveIn += ev.delta;
+    if (t === "session.input_transcript.delta") {
+      this.registarFragmento("user", ev);
       return;
     }
-    if (t === "session.input_transcript.done") {
-      if (ev.delta) this.liveIn += ev.delta;
-      if (ev.transcript) this.liveIn = ev.transcript;
-      this.despejarUser();
+    if (t === "session.output_transcript.delta") {
+      this.registarFragmento("assistant", ev);
       return;
     }
-    if (t === "session.output_transcript.delta" && ev.delta) {
-      this.liveOut += ev.delta;
-      return;
-    }
-    if (t === "session.output_transcript.done") {
-      if (ev.delta) this.liveOut += ev.delta;
-      if (ev.transcript) this.liveOut = ev.transcript;
-      this.despejarAlice();
+    // A API não documenta eventos .done de transcrição e não os vimos em nenhuma chamada.
+    // Se algum dia aparecerem, só servem de rede de segurança: aproveitamos o texto quando
+    // não recebemos delta nenhum desse interlocutor, senão duplicava a chamada inteira.
+    if (t === "session.input_transcript.done" || t === "session.output_transcript.done") {
+      const role = t === "session.input_transcript.done" ? "user" : "assistant";
+      if (ev.transcript && !this.fragmentos.some(f => f.role === role)) {
+        this.fragmentos.push({ role, delta: ev.transcript, start_ms: 0, end_ms: 0 });
+      }
       return;
     }
     if (t === "response.event") {
@@ -213,8 +205,6 @@ class ChamadaSipLive {
         innerT === "response.output_item.done" ||
         inner.item?.type === "function_call"
       )) {
-        this.despejarUser();
-        this.despejarAlice();
         this.desligar("end_call");
       }
       return;
@@ -249,15 +239,16 @@ class ChamadaSipLive {
     clearTimeout(this.limite);
     clearTimeout(this.limiteSaudacao);
     clearTimeout(this.limiteDrain);
-    this.despejarUser();
-    this.despejarAlice();
     try { this.ws?.close(); } catch { /* já fechado */ }
     this.cfg.aoTerminar(this.sessionId);
-    if (!this.transcript.length) {
+    // Só aqui: um fragmento atrasado ainda podia mudar o agrupamento a meio da chamada.
+    const transcript = montarTurnos(this.fragmentos);
+    if (!transcript.length) {
       console.log(`[sip-live ${this.sessionId}] sem transcrição, nada a registar`);
       return;
     }
-    this.cfg.extrair(this.transcript, { ...this.diag, telefone_origem: this.de }, "alfa-voz-sip")
+    console.log(`[sip-live ${this.sessionId}] ${this.fragmentos.length} fragmentos -> ${transcript.length} turnos`);
+    this.cfg.extrair(transcript, { ...this.diag, telefone_origem: this.de }, "alfa-voz-sip")
       .catch(e => console.error(`[sip-live ${this.sessionId}] extração:`, e?.message || e));
   }
 }

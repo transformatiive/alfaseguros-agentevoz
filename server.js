@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { corrigirEmailEmDados, emailDeContacto } from "./email.js";
 import { corrigirTelefoneEmDados, diagSemOrigemDeCliente, juntarCampo, telefoneDeContacto } from "./telefone.js";
 import { registarRotasSip, sipHealth } from "./sip-agent.js";
 import {
@@ -278,7 +279,7 @@ const SCHEMA = {
   },
   required: ["categoria","produto","nome_cliente","telefone","email","nif","cliente_existente","dados_recolhidos","campos_por_confirmar","campos_em_falta","quer_humano","prioridade","resumo","proximo_passo","mencionou_dados_saude"]
 };
-const EXTRACT_PROMPT = `Extrai, a partir da transcrição de uma chamada entre a assistente virtual Alice (Alfaseguros) e um cliente, os campos pedidos. Regras: 'dados_recolhidos' em formato 'campo: valor; campo: valor'. PROIBIDO incluir qualquer informação de saúde, doenças, medicação ou deficiências em qualquer campo; se o cliente a mencionou, marca mencionou_dados_saude=true e escreve no resumo apenas 'cliente mencionou informação de saúde, a recolher por humano'. 'campos_em_falta' = campos obrigatórios do produto que o cliente não soube. 'produto' usa os códigos: AUTOMOVEL, MULTIRRISCOS_HABITACAO, MULTIRRISCOS_CONDOMINIO, MULTIRRISCOS_EMPRESARIAL, SAUDE, TVDE, ACIDENTES_TRABALHO_INDIVIDUAL, ACIDENTES_TRABALHO_COLETIVO, RC_GERAL, RC_CONSTRUCAO, RC_EMPRESARIAL, RC_MEDICOS, RC_ARMAS_CACADOR, OBRAS_MONTAGENS, ANIMAIS, BICICLETAS_TROTINETAS, VIAGEM, EMBARCACAO, ACIDENTES_PESSOAIS (ou "" se não for simulação). 'quer_humano' só é true se o cliente pediu EXPLICITAMENTE para falar com uma pessoa; um colega ligar de volta é o fluxo normal e NÃO conta. 'prioridade' alta se sinistro urgente, pedido sem resposta, cliente irritado ou quer_humano=true. Resumo em 2 a 4 frases, português europeu, para um consultor humano. Campos vazios = "".`;
+const EXTRACT_PROMPT = `Extrai, a partir da transcrição de uma chamada entre a assistente virtual Alice (Alfaseguros) e um cliente, os campos pedidos. Regras: 'dados_recolhidos' em formato 'campo: valor; campo: valor'. Pedir um seguro de saúde NÃO é informação clínica: o produto SAUDE, o número de pessoas, as idades e as coberturas pretendidas (dentária, óculos, estomatologia) são dados comerciais normais e TÊM de constar no resumo e em dados_recolhidos. mencionou_dados_saude=true só quando o cliente revelar algo clínico concreto sobre alguém: doença, sintoma, medicação, tratamento, cirurgia, gravidez, deficiência ou histórico clínico. Nesse caso é PROIBIDO escrever essa informação em qualquer campo, mas o resumo mantém o resto do pedido e acrescenta a frase 'O cliente mencionou informação clínica, a recolher por um consultor.' — nunca substituas o resumo inteiro por essa frase. 'campos_em_falta' = campos obrigatórios do produto que o cliente não soube. 'produto' usa os códigos: AUTOMOVEL, MULTIRRISCOS_HABITACAO, MULTIRRISCOS_CONDOMINIO, MULTIRRISCOS_EMPRESARIAL, SAUDE, TVDE, ACIDENTES_TRABALHO_INDIVIDUAL, ACIDENTES_TRABALHO_COLETIVO, RC_GERAL, RC_CONSTRUCAO, RC_EMPRESARIAL, RC_MEDICOS, RC_ARMAS_CACADOR, OBRAS_MONTAGENS, ANIMAIS, BICICLETAS_TROTINETAS, VIAGEM, EMBARCACAO, ACIDENTES_PESSOAIS (ou "" se não for simulação). 'cliente_existente': a Alice pergunta 'Já é cliente da Alfaseguros?' — a resposta é o que o cliente disser no turno seguinte, e um 'sim'/'não' isolado conta como resposta. Só pões 'desconhecido' se a pergunta não foi feita ou ficou sem resposta. 'email': junta tudo sem espaços ('soraia marina arroba gmail ponto com' é 'soraiamarina@gmail.com'); um email nunca leva espaços. 'quer_humano' só é true se o cliente pediu EXPLICITAMENTE para falar com uma pessoa; um colega ligar de volta é o fluxo normal e NÃO conta. 'prioridade' alta se sinistro urgente, pedido sem resposta, cliente irritado ou quer_humano=true. Resumo em 2 a 4 frases, português europeu, para um consultor humano. Campos vazios = "".`;
 
 async function extrairEEnviar(linhas, diag, origem = "alfa-voz-web") {
   const transcript = (linhas || []).map(t => `${t.role === "user" ? "CLIENTE" : "ALICE"}: ${t.text}`).join("\n");
@@ -301,6 +302,12 @@ async function extrairEEnviar(linhas, diag, origem = "alfa-voz-web") {
   resultado.telefone = telefone;
   resultado.dados_recolhidos = corrigirTelefoneEmDados(resultado.dados_recolhidos, telefone);
   if (porConfirmar) resultado.campos_por_confirmar = juntarCampo(resultado.campos_por_confirmar, porConfirmar);
+
+  // O email também não fica ao critério da transcrição: ver email.js.
+  const { email, porConfirmar: emailPorConfirmar } = emailDeContacto(resultado.email);
+  resultado.email = email;
+  resultado.dados_recolhidos = corrigirEmailEmDados(resultado.dados_recolhidos, email);
+  if (emailPorConfirmar) resultado.campos_por_confirmar = juntarCampo(resultado.campos_por_confirmar, emailPorConfirmar);
   // O consultor fica sempre com o número de onde a chamada veio, mesmo quando é o mesmo.
   const diagFinal = diag ? { ...diag, telefone_origem: numeroOrigem || diag.telefone_origem || "" } : diag;
 
