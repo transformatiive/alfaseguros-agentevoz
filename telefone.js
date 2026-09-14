@@ -22,11 +22,13 @@ export function normalizarTelefonePt(valor) {
 export function numeroDeOrigem(cabecalhoFrom) {
   const s = String(cabecalhoFrom ?? "");
   // '"+351917318234" <sip:+351917318234@sip.telnyx.eu>;tag=abc'
-  // Quando há <...>, é esse o URI autoritativo (RFC 3261). O nome de apresentação que o
-  // antecede é texto livre de quem liga: se procurássemos no cabeçalho todo, um nome com
-  // "sip:+351999999999@..." lá dentro ganhava ao URI verdadeiro.
-  const angulos = s.match(/<([^>]*)>/);
-  const alvo = angulos ? angulos[1] : s;
+  // O addr-spec autoritativo é o que está entre <...> (RFC 3261). O display-name que o
+  // antecede é escolhido por quem liga e, sendo uma quoted-string, pode conter sip:, < e >
+  // à vontade — tem de sair antes da procura, ou é o nome que passa por URI. Um
+  // display-name sem aspas não pode ter < nem > (não são caracteres de token).
+  const semNome = s.replace(/"(?:[^"\\]|\\.)*"/g, "");
+  const angulos = semNome.match(/<([^>]*)>/);
+  const alvo = angulos ? angulos[1] : semNome;
   const uri = alvo.match(/sips?:([^@;>\s]+)/i);
   return normalizarTelefonePt(uri ? uri[1] : alvo);
 }

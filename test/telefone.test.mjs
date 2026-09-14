@@ -37,6 +37,22 @@ test("numeroDeOrigem resiste a um URI forjado no nome de apresentação", () => 
   assert.equal(numeroDeOrigem("<tel:+351917318234>"), "917318234");
 });
 
+test("numeroDeOrigem resiste a ângulos dentro do nome de apresentação", () => {
+  // RFC 3261: o display-name pode ser uma quoted-string, e uma quoted-string pode conter
+  // < e >. Procurar o primeiro <...> do cabeçalho deixava o nome passar por addr-spec.
+  assert.equal(
+    numeroDeOrigem(String.raw`"<sip:+351999999999@evil>" <sip:+351917318234@sip.telnyx.eu>;tag=x`),
+    "917318234"
+  );
+  // com aspas escapadas lá dentro
+  assert.equal(
+    numeroDeOrigem(String.raw`"diz \" <sip:+351999999999@evil>" <sip:+351917318234@host>`),
+    "917318234"
+  );
+  // só o nome, sem addr-spec: nada a aproveitar
+  assert.equal(numeroDeOrigem(String.raw`"<sip:+351999999999@evil>"`), "");
+});
+
 test("diagSemOrigemDeCliente tira o número de origem do diag do browser", () => {
   // /api/extract é público: aceitar telefone_origem de lá era deixar qualquer um escolher
   // o número de retorno e vê-lo apresentado como se viesse da rede.
