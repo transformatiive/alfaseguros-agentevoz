@@ -18,19 +18,40 @@ export function normalizarTelefonePt(valor) {
   return PT_NACIONAL.test(nacional) ? nacional : "";
 }
 
+// RFC 3261 §25.1:
+//   from-spec    = ( name-addr / addr-spec ) *( SEMI from-param )
+//   name-addr    = [ display-name ] LAQUOT addr-spec RAQUOT
+//   display-name = *(token LWS) / quoted-string
+//   token        = 1*(alphanum / "-" / "." / "!" / "%" / "*" / "_" / "+" / "`" / "'" / "~")
+// Tudo o que está antes do addr-spec é escolhido por quem liga. Entre aspas pode levar
+// "sip:", "<" e ">"; sem aspas só pode levar tokens, onde < > ( ) @ não entram (são
+// separators). Deixámos de tentar adivinhar qual dos <...> é o verdadeiro num cabeçalho
+// torcido: validamos a forma e FALHAMOS FECHADO. Sem número de origem, telefoneDeContacto
+// fica com o que a extração deu, que é o comportamento de sempre — nunca com o do atacante.
+const TOKEN_E_ESPACO = /^[A-Za-z0-9\-.!%*_+`'~\s]*$/;
+
+function numeroDoAddrSpec(addrSpec) {
+  const v = String(addrSpec).trim();
+  const comEsquema = v.match(/^(?:sips?|tel):([^@;?\s]+)/i);
+  if (comEsquema) return normalizarTelefonePt(comEsquema[1]);
+  // Sem esquema só aceitamos o que já é um número; nunca um user@host qualquer.
+  return /^[+\d][\d\s.\-()]*$/.test(v) ? normalizarTelefonePt(v) : "";
+}
+
 /** Número de quem liga, a partir do cabeçalho SIP From. */
 export function numeroDeOrigem(cabecalhoFrom) {
-  const s = String(cabecalhoFrom ?? "");
-  // '"+351917318234" <sip:+351917318234@sip.telnyx.eu>;tag=abc'
-  // O addr-spec autoritativo é o que está entre <...> (RFC 3261). O display-name que o
-  // antecede é escolhido por quem liga e, sendo uma quoted-string, pode conter sip:, < e >
-  // à vontade — tem de sair antes da procura, ou é o nome que passa por URI. Um
-  // display-name sem aspas não pode ter < nem > (não são caracteres de token).
-  const semNome = s.replace(/"(?:[^"\\]|\\.)*"/g, "");
-  const angulos = semNome.match(/<([^>]*)>/);
-  const alvo = angulos ? angulos[1] : semNome;
-  const uri = alvo.match(/sips?:([^@;>\s]+)/i);
-  return normalizarTelefonePt(uri ? uri[1] : alvo);
+  // A quoted-string sai primeiro (com os quoted-pairs \"), senão o display-name entre
+  // aspas passa por addr-spec. Fica um espaço no lugar para não colar o que estava à volta.
+  const semNome = String(cabecalhoFrom ?? "").replace(/"(?:[^"\\]|\\.)*"/g, " ");
+
+  const abre = semNome.indexOf("<");
+  if (abre === -1) return numeroDoAddrSpec(semNome); // addr-spec sem ângulos
+
+  const fecha = semNome.indexOf(">", abre);
+  if (fecha === -1) return "";                        // ângulo por fechar
+  if (semNome.includes("<", fecha)) return "";        // mais do que um addr-spec
+  if (!TOKEN_E_ESPACO.test(semNome.slice(0, abre))) return ""; // lixo antes do display-name
+  return numeroDoAddrSpec(semNome.slice(abre + 1, fecha));
 }
 
 /**

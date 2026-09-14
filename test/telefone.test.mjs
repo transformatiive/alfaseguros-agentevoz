@@ -53,6 +53,27 @@ test("numeroDeOrigem resiste a ângulos dentro do nome de apresentação", () =>
   assert.equal(numeroDeOrigem(String.raw`"<sip:+351999999999@evil>"`), "");
 });
 
+test("numeroDeOrigem falha fechado num cabeçalho torcido", () => {
+  // Pelo RFC 3261 o from-spec não admite comentários — só display-name e addr-spec — mas
+  // um cabeçalho malformado não pode render o número do atacante. Sem origem, quem manda
+  // é a extração, que é o comportamento de sempre.
+  assert.equal(numeroDeOrigem(String.raw`Alice (see <sip:+351999999999@evil>) <sip:+351917318234@host>`), "");
+  // mais do que um addr-spec: não se adivinha qual é o verdadeiro
+  assert.equal(numeroDeOrigem("<sip:+351999999999@evil> <sip:+351917318234@host>"), "");
+  // ângulo por fechar
+  assert.equal(numeroDeOrigem("<sip:+351917318234@host"), "");
+  // um display-name sem aspas não pode ter separators; se tem, o cabeçalho não é de fiar
+  assert.equal(numeroDeOrigem("sip:+351999999999@evil <sip:+351917318234@host>"), "");
+  // um display-name legítimo (só tokens) não é afetado
+  assert.equal(numeroDeOrigem("Alice Silva <sip:+351917318234@host>"), "917318234");
+});
+
+test("numeroDoAddrSpec não aceita um user@host qualquer como número", () => {
+  // sem esquema, só passa o que já é um número — senão os dígitos do host entravam
+  assert.equal(numeroDeOrigem("<917318234@sip.telnyx.eu>"), "");
+  assert.equal(numeroDeOrigem("<+351917318234>"), "917318234");
+});
+
 test("diagSemOrigemDeCliente tira o número de origem do diag do browser", () => {
   // /api/extract é público: aceitar telefone_origem de lá era deixar qualquer um escolher
   // o número de retorno e vê-lo apresentado como se viesse da rede.

@@ -61,7 +61,8 @@ número português completo e diferente. Se o cliente disser um número que não
 validar, fica o da rede e o que foi dito vai para `campos_por_confirmar`. Chamadas pelo
 browser não têm origem: aí vale o que a extração devolveu. Ver `telefone.js`. O número de
 origem só é aceite pela via SIP (webhook assinado); em `POST /api/extract`, que é público,
-é descartado.
+é descartado. A leitura do cabeçalho `From` valida a gramática do RFC 3261 e falha fechado
+em qualquer forma torcida — parte do cabeçalho é texto escolhido por quem liga.
 - `PORT` (Railway)
 
 ## SIP Direct — URL e URI
