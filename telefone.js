@@ -21,10 +21,25 @@ export function normalizarTelefonePt(valor) {
 /** Número de quem liga, a partir do cabeçalho SIP From. */
 export function numeroDeOrigem(cabecalhoFrom) {
   const s = String(cabecalhoFrom ?? "");
-  // '"+351917318234" <sip:+351917318234@sip.telnyx.eu>;tag=abc' — a parte de utilizador
-  // do URI é a fonte fiável; o nome de apresentação é livre e pode vir com texto.
-  const uri = s.match(/sips?:([^@;>\s]+)/i);
-  return normalizarTelefonePt(uri ? uri[1] : s);
+  // '"+351917318234" <sip:+351917318234@sip.telnyx.eu>;tag=abc'
+  // Quando há <...>, é esse o URI autoritativo (RFC 3261). O nome de apresentação que o
+  // antecede é texto livre de quem liga: se procurássemos no cabeçalho todo, um nome com
+  // "sip:+351999999999@..." lá dentro ganhava ao URI verdadeiro.
+  const angulos = s.match(/<([^>]*)>/);
+  const alvo = angulos ? angulos[1] : s;
+  const uri = alvo.match(/sips?:([^@;>\s]+)/i);
+  return normalizarTelefonePt(uri ? uri[1] : alvo);
+}
+
+/**
+ * Diag que chega do browser em POST /api/extract, que é público.
+ * O número de origem só vale na via SIP, onde o webhook vem assinado; vindo do cliente
+ * seria um número à escolha de quem chama o endpoint, apresentado como se fosse da rede.
+ */
+export function diagSemOrigemDeCliente(diag) {
+  if (!diag || typeof diag !== "object") return diag;
+  const { telefone_origem, ...resto } = diag;
+  return resto;
 }
 
 /**

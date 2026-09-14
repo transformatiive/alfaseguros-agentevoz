@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   corrigirTelefoneEmDados,
+  diagSemOrigemDeCliente,
   juntarCampo,
   normalizarTelefonePt,
   numeroDeOrigem,
@@ -23,6 +24,29 @@ test("numeroDeOrigem lê o cabeçalho SIP From tal como a Telnyx o envia", () =>
 test("numeroDeOrigem ignora o nome de apresentação quando há URI", () => {
   // O nome de apresentação é texto livre: se trouxer outro número, manda o URI.
   assert.equal(numeroDeOrigem('"Ligue 800200300" <sip:+351917318234@host>'), "917318234");
+});
+
+test("numeroDeOrigem resiste a um URI forjado no nome de apresentação", () => {
+  // Quem liga escolhe o nome de apresentação. Se lá meter um sip: completo, o URI entre
+  // <...> continua a ser o que conta — senão mandávamos o consultor ligar ao atacante.
+  const forjado = String.raw`"sip:+351999999999@evil.example" <sip:+351917318234@sip.telnyx.eu>;tag=x`;
+  assert.equal(numeroDeOrigem(forjado), "917318234");
+  // Sem URI válido dentro dos ângulos não se cai para o nome de apresentação.
+  assert.equal(numeroDeOrigem('"sip:+351999999999@evil" <>'), "");
+  // tel: também é aceite dentro dos ângulos
+  assert.equal(numeroDeOrigem("<tel:+351917318234>"), "917318234");
+});
+
+test("diagSemOrigemDeCliente tira o número de origem do diag do browser", () => {
+  // /api/extract é público: aceitar telefone_origem de lá era deixar qualquer um escolher
+  // o número de retorno e vê-lo apresentado como se viesse da rede.
+  assert.deepEqual(
+    diagSemOrigemDeCliente({ motor: "GPT-Live-1", underruns: 2, telefone_origem: "+351999999999" }),
+    { motor: "GPT-Live-1", underruns: 2 }
+  );
+  assert.deepEqual(diagSemOrigemDeCliente({ motor: "x" }), { motor: "x" });
+  assert.equal(diagSemOrigemDeCliente(undefined), undefined);
+  assert.equal(diagSemOrigemDeCliente(null), null);
 });
 
 test("normalizarTelefonePt aceita só números nacionais completos", () => {

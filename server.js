@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { corrigirTelefoneEmDados, juntarCampo, telefoneDeContacto } from "./telefone.js";
+import { corrigirTelefoneEmDados, diagSemOrigemDeCliente, juntarCampo, telefoneDeContacto } from "./telefone.js";
 import { registarRotasSip, sipHealth } from "./sip-agent.js";
 import {
   GPT_LIVE_USER_AGENT,
@@ -316,7 +316,7 @@ async function extrairEEnviar(linhas, diag, origem = "alfa-voz-web") {
 
 app.post("/api/extract", async (req, res) => {
   try {
-    const resultado = await extrairEEnviar(req.body.transcript, req.body.diag, "alfa-voz-web");
+    const resultado = await extrairEEnviar(req.body.transcript, diagSemOrigemDeCliente(req.body.diag), "alfa-voz-web");
     res.json({ resultado, transcript: req.body.transcript || [] });
   } catch (e) {
     if (e.status) return res.status(e.status).json(e.data);

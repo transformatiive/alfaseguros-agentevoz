@@ -59,7 +59,9 @@ O número registado vem do cabeçalho SIP `From` (dado da rede, não passa pelo 
 nem pela transcrição). Só é substituído quando, durante a chamada, for partilhado um
 número português completo e diferente. Se o cliente disser um número que não chegue a
 validar, fica o da rede e o que foi dito vai para `campos_por_confirmar`. Chamadas pelo
-browser não têm origem: aí vale o que a extração devolveu. Ver `telefone.js`.
+browser não têm origem: aí vale o que a extração devolveu. Ver `telefone.js`. O número de
+origem só é aceite pela via SIP (webhook assinado); em `POST /api/extract`, que é público,
+é descartado.
 - `PORT` (Railway)
 
 ## SIP Direct — URL e URI
