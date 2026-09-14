@@ -1,0 +1,98 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  corrigirTelefoneEmDados,
+  juntarCampo,
+  normalizarTelefonePt,
+  numeroDeOrigem,
+  telefoneDeContacto
+} from "../telefone.js";
+
+// Cabeçalho From real, tirado dos logs da Railway da chamada de 14/09 15:38.
+const FROM_REAL = '"+351917318234" <sip:+351917318234@sip.telnyx.eu>;tag=S1FQ2e76mjjvB';
+
+test("numeroDeOrigem lê o cabeçalho SIP From tal como a Telnyx o envia", () => {
+  assert.equal(numeroDeOrigem(FROM_REAL), "917318234");
+  assert.equal(numeroDeOrigem("<sip:917318234@sip.telnyx.eu>"), "917318234");
+  assert.equal(numeroDeOrigem("sip:00351917318234@host;transport=tls"), "917318234");
+  assert.equal(numeroDeOrigem(""), "");
+  assert.equal(numeroDeOrigem(undefined), "");
+});
+
+test("numeroDeOrigem ignora o nome de apresentação quando há URI", () => {
+  // O nome de apresentação é texto livre: se trouxer outro número, manda o URI.
+  assert.equal(numeroDeOrigem('"Ligue 800200300" <sip:+351917318234@host>'), "917318234");
+});
+
+test("normalizarTelefonePt aceita só números nacionais completos", () => {
+  assert.equal(normalizarTelefonePt("926420327"), "926420327");
+  assert.equal(normalizarTelefonePt("+351 926 420 327"), "926420327");
+  assert.equal(normalizarTelefonePt("00351926420327"), "926420327");
+  assert.equal(normalizarTelefonePt("212345678"), "212345678"); // fixo
+  assert.equal(normalizarTelefonePt("92642327"), ""); // o defeito de 14/09: 8 dígitos
+  assert.equal(normalizarTelefonePt("9264203271"), ""); // 10 dígitos
+  assert.equal(normalizarTelefonePt("123456789"), ""); // não começa por 2-9
+  assert.equal(normalizarTelefonePt(""), "");
+});
+
+test("14/09: extração perdeu um dígito — vale o número de origem, e o dito fica assinalado", () => {
+  const r = telefoneDeContacto("92642327", FROM_REAL);
+  assert.equal(r.telefone, "917318234");
+  assert.equal(r.origem, "917318234");
+  assert.match(r.porConfirmar, /92642327/);
+});
+
+test("11/09: cliente partilhou um número diferente e válido — esse prevalece", () => {
+  const r = telefoneDeContacto("926420327", FROM_REAL);
+  assert.equal(r.telefone, "926420327");
+  assert.equal(r.origem, "917318234");
+  assert.equal(r.porConfirmar, "");
+});
+
+test("cliente confirmou o número de onde liga — sem aviso a mais", () => {
+  const r = telefoneDeContacto("917318234", FROM_REAL);
+  assert.equal(r.telefone, "917318234");
+  assert.equal(r.porConfirmar, "");
+});
+
+test("nada foi dito na chamada — fica o número de origem, sem aviso", () => {
+  const r = telefoneDeContacto("", FROM_REAL);
+  assert.equal(r.telefone, "917318234");
+  assert.equal(r.porConfirmar, "");
+});
+
+test("chamada pelo browser (sem origem) mantém o comportamento anterior", () => {
+  assert.equal(telefoneDeContacto("926420327", undefined).telefone, "926420327");
+  // sem número de rede não há nada melhor: preserva-se o que a extração deu
+  assert.equal(telefoneDeContacto("92642327", "").telefone, "92642327");
+  assert.equal(telefoneDeContacto("", "").telefone, "");
+});
+
+test("corrigirTelefoneEmDados acerta só a entrada do telefone", () => {
+  const dados = "nome_cliente: Suraya Silva; telefone: 92642327; email: s@gmail.com; numero_pessoas: 2";
+  assert.equal(
+    corrigirTelefoneEmDados(dados, "917318234"),
+    "nome_cliente: Suraya Silva; telefone: 917318234; email: s@gmail.com; numero_pessoas: 2"
+  );
+  // primeira posição e sem espaço depois dos dois pontos
+  assert.equal(corrigirTelefoneEmDados("telefone:92642327; nome: X", "917318234"), "telefone:917318234; nome: X");
+  // sem entrada de telefone fica igual
+  assert.equal(corrigirTelefoneEmDados("nome: X", "917318234"), "nome: X");
+  assert.equal(corrigirTelefoneEmDados("", "917318234"), "");
+});
+
+test("corrigirTelefoneEmDados não mexe em campos com 'telefone' no meio do nome", () => {
+  const dados = "telefone_alternativo: 911111111; telefone: 92642327";
+  assert.equal(
+    corrigirTelefoneEmDados(dados, "917318234"),
+    "telefone_alternativo: 911111111; telefone: 917318234"
+  );
+});
+
+test("juntarCampo acumula sem separadores soltos", () => {
+  assert.equal(juntarCampo("", "aviso"), "aviso");
+  assert.equal(juntarCampo("matrícula", "aviso"), "matrícula; aviso");
+  assert.equal(juntarCampo("matrícula", ""), "matrícula");
+  assert.equal(juntarCampo(undefined, undefined), "");
+});

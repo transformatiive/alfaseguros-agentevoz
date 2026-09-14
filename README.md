@@ -52,6 +52,14 @@ npm test
 - `TEXT_MODEL` (default `gpt-5.4-mini`, extração pós-chamada)
 - `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID`
 - `RESULT_WEBHOOK` (n8n; `""` desativa)
+
+### Telefone de contacto
+
+O número registado vem do cabeçalho SIP `From` (dado da rede, não passa pelo modelo
+nem pela transcrição). Só é substituído quando, durante a chamada, for partilhado um
+número português completo e diferente. Se o cliente disser um número que não chegue a
+validar, fica o da rede e o que foi dito vai para `campos_por_confirmar`. Chamadas pelo
+browser não têm origem: aí vale o que a extração devolveu. Ver `telefone.js`.
 - `PORT` (Railway)
 
 ## SIP Direct — URL e URI

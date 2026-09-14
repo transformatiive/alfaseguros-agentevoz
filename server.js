@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { corrigirTelefoneEmDados, juntarCampo, telefoneDeContacto } from "./telefone.js";
 import { registarRotasSip, sipHealth } from "./sip-agent.js";
 import {
   GPT_LIVE_USER_AGENT,
@@ -294,11 +295,20 @@ async function extrairEEnviar(linhas, diag, origem = "alfa-voz-web") {
   if (!r.ok) { const e = new Error("extracao"); e.status = r.status; e.data = data; throw e; }
   const txt = data.output?.flatMap(o => o.content || []).find(c => c.type === "output_text")?.text || "{}";
   const resultado = JSON.parse(txt);
+
+  // O telefone não fica ao critério da transcrição: ver telefone.js.
+  const { telefone, origem: numeroOrigem, porConfirmar } = telefoneDeContacto(resultado.telefone, diag?.telefone_origem);
+  resultado.telefone = telefone;
+  resultado.dados_recolhidos = corrigirTelefoneEmDados(resultado.dados_recolhidos, telefone);
+  if (porConfirmar) resultado.campos_por_confirmar = juntarCampo(resultado.campos_por_confirmar, porConfirmar);
+  // O consultor fica sempre com o número de onde a chamada veio, mesmo quando é o mesmo.
+  const diagFinal = diag ? { ...diag, telefone_origem: numeroOrigem || diag.telefone_origem || "" } : diag;
+
   if (RESULT_WEBHOOK) {
     fetch(RESULT_WEBHOOK, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resultado, transcript: linhas || [], diag, data: new Date().toISOString(), origem })
+      body: JSON.stringify({ resultado, transcript: linhas || [], diag: diagFinal, data: new Date().toISOString(), origem })
     }).catch(() => {});
   }
   return resultado;
