@@ -268,6 +268,46 @@ test("realtime.call.incoming without session_id is ignored (no Realtime accept)"
   }
 });
 
+test("transcript reaches extraction as interleaved turns, not two role blocks", async () => {
+  const ctx = await startSip();
+  try {
+    await postWebhook(ctx.url, incoming({ sessionId: "sess_turnos" }));
+    await wait(20);
+    const ws = FakeWebSocket.instances[0];
+    ws.emit({ type: "session.started" });
+
+    // Fala a fala, como a API entrega: fragmentos com tempos, sem nenhum evento .done.
+    const guiao = [
+      ["assistant", "Pode dizer-me o seu nome completo?", 0, 1600],
+      ["user", "Suraya Silva", 2200, 800],
+      ["assistant", "Já é cliente da Alfaseguros?", 3600, 1300],
+      ["user", "Sim", 5400, 300],
+      ["assistant", "E qual é o seu email?", 6200, 1100]
+    ];
+    for (const [role, texto, ini, dur] of guiao) {
+      const tipo = role === "user" ? "session.input_transcript.delta" : "session.output_transcript.delta";
+      const pedacos = texto.match(/.{1,10}/g);
+      pedacos.forEach((delta, i) => {
+        const passo = dur / pedacos.length;
+        ws.emit({ type: tipo, delta, start_ms: Math.round(ini + i * passo), end_ms: Math.round(ini + (i + 1) * passo) });
+      });
+    }
+
+    ws.emit({ type: "session.closed" });
+    await wait(30);
+
+    assert.equal(ctx.extracted.length, 1);
+    const t = ctx.extracted[0].transcript;
+    assert.deepEqual(t.map(x => x.role), guiao.map(g => g[0]), "papéis intercalados");
+    assert.deepEqual(t.map(x => x.text), guiao.map(g => g[1]), "texto de cada fala inteiro");
+    // O emparelhamento que faltava: o "Sim" imediatamente a seguir à pergunta.
+    const i = t.findIndex(x => x.text === "Já é cliente da Alfaseguros?");
+    assert.equal(t[i + 1].text, "Sim");
+  } finally {
+    await ctx.close();
+  }
+});
+
 test("end_call hangs up via Live hangup and extracts with origem alfa-voz-sip", async () => {
   const ctx = await startSip();
   try {
