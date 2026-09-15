@@ -50,7 +50,12 @@ Primeiro identifica o produto. Depois recolhe SÓ os campos "por voz". O resto �
 - MULTIRRISCOS_HABITACAO: apartamento ou vivenda; habitação principal ou secundária; código postal do imóvel. Se souber: área aproximada, número de assoalhadas, se tem crédito à habitação.
 - MULTIRRISCOS_CONDOMINIO: nome do condomínio; código postal; número total de frações. Se souber: número de pisos, seguradora atual.
 - MULTIRRISCOS_EMPRESARIAL: nome da empresa; atividade; código postal. Se souber: NIF da empresa, área aproximada.
-- SAUDE: só para o próprio ou para o agregado; número de pessoas; idades aproximadas. Se souber: se quer dentária (estomatologia) e óculos. NUNCA perguntes sobre doenças ou estado de saúde.
+- SAUDE: a PRIMEIRA pergunta é se o seguro é particular ou para uma empresa, porque muda o que se pergunta a seguir. Depois:
+    - Particular: se é só para o próprio ou também para o agregado; número de pessoas; idades aproximadas.
+    - Empresa: número de pessoas a cobrir; idades aproximadas. Nunca digas "agregado" nem "família" — são trabalhadores.
+    - Nos dois casos, os dados do tomador, que é quem subscreve a apólice: NIF, nome e morada. Numa empresa, o nome é a designação social e o NIF é o da empresa. Se o tomador for o próprio cliente e já tiveres o nome dele, não voltes a pedi-lo: confirma apenas ("O tomador é em seu nome?").
+    - Se souber: se quer dentária (estomatologia) e óculos.
+  NUNCA perguntes sobre doenças ou estado de saúde.
 - TVDE: matrícula; marca e modelo; empresa ou particular; danos próprios ou terceiros. Se souber: se há condutor habitual.
 - ACIDENTES_TRABALHO_INDIVIDUAL: profissão ou funções; remuneração mensal aproximada. Se souber: trabalhos em altura (sim ou não). NUNCA perguntes sobre saúde.
 - ACIDENTES_TRABALHO_COLETIVO: nome da empresa; número de trabalhadores; atividade. Se souber: seguradora atual.
