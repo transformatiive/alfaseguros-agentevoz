@@ -23,6 +23,8 @@ import {
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const serverSrc = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const sipSrc = fs.readFileSync(path.join(root, "sip-agent.js"), "utf8");
+const liveSrc = fs.readFileSync(path.join(root, "live-session.js"), "utf8");
+const promptSrc = fs.readFileSync(path.join(root, "prompt_alfa.md"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 const html = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 
@@ -88,6 +90,18 @@ test("server wires Live SDP exchange; advertised voice is marin not ara", () => 
   assert.match(serverSrc, /sipHealth/);
   assert.doesNotMatch(serverSrc, /gpt-realtime-2\.1/);
   assert.doesNotMatch(serverSrc, /\$\{OPENAI_BASE\}\/v1\/realtime\/client_secrets/);
+});
+
+test("closing ends automatically after confirmation and uses the requested wording", () => {
+  assert.match(promptSrc, /melhor solução/);
+  assert.match(promptSrc, /o mais rapidamente possível/);
+  assert.doesNotMatch(promptSrc, /melhor proposta/);
+  assert.doesNotMatch(promptSrc, /até ao final do próximo dia útil/);
+  assert.match(serverSrc, /depois de o cliente confirmar o resumo e de a Alice dizer a frase de fecho completa/);
+  assert.doesNotMatch(serverSrc, /o cliente se despediu ou ficou em silêncio/);
+  assert.match(html, /o mais rapidamente possível/);
+  assert.match(liveSrc, /name: "end_call"[\s\S]*?\(a\) confirmaste o pedido com o cliente e ele disse que está correto, \(b\) disseste a frase de fecho completa/);
+  assert.doesNotMatch(liveSrc, /o cliente se despediu ou ficou em silêncio/);
 });
 
 test("browser default is GPT-Live WebRTC, not Grok/Ara", () => {

@@ -78,7 +78,7 @@ const CALL_BOOKENDS = `
 A tua primeira fala é exatamente: "${FIRST_MESSAGE}"
 
 # Terminar a chamada
-Só podes chamar a ferramenta end_call DEPOIS de cumprir os três passos: (a) confirmaste o pedido com o cliente e ele disse que está correto, (b) disseste a frase de fecho completa, (c) o cliente se despediu ou ficou em silêncio. Nunca termines a chamada antes da confirmação.
+Só podes chamar a ferramenta end_call DEPOIS de cumprir estes dois passos e nada mais: (a) confirmaste o pedido com o cliente e ele disse que está correto, (b) disseste a frase de fecho completa. Depois de (b), invoca end_call imediatamente, sem esperar que o cliente se despeça ou fique em silêncio. Nunca termines a chamada antes da confirmação.
 `;
 
 const TRANSCRIPTION_PROMPT = "Chamada telefónica para a Alfaseguros, corretora de seguros em Portugal. O cliente pode falar português de Portugal, inglês, espanhol ou francês. Termos frequentes: Alice, Alfaseguros, apólice, sinistro, multirriscos, condomínio, frações, TVDE, matrícula, código postal, NIF, telemóvel, morada, carta de condução, danos próprios, responsabilidade civil, simulação, consultor. Aparecem nomes próprios portugueses, moradas e endereços de email.";
@@ -186,7 +186,7 @@ Muda só a língua: as perguntas, a ordem e as confirmações do guião são exa
 ` + FLOW_RULES + PROMPT + CALL_BOOKENDS;
 
 const LIVE_DELEGATE_INSTRUCTIONS = `És o raciocínio de uma chamada inbound da Alice (Alfaseguros). A voz na linha já está a falar com o cliente em português europeu de Portugal (pt-PT, Lisboa — nunca brasileiro).
-Chama a ferramenta end_call APENAS depois de o cliente confirmar o resumo e de a Alice dizer a frase de fecho completa. Nunca desligues antes disso.`;
+Chama a ferramenta end_call APENAS depois de o cliente confirmar o resumo e de a Alice dizer a frase de fecho completa: (a) confirmaste o pedido com o cliente e ele disse que está correto, (b) disseste a frase de fecho completa. Invoca end_call imediatamente depois de (b), sem esperar despedida nem silêncio. Nunca desligues antes disso.`;
 
 export const sessionConfig = (voice = VOICE, input) => liveSessionConfig({
   model: LIVE_MODEL,

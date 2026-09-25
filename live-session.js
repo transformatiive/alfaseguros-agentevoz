@@ -20,7 +20,7 @@ export const GPT_LIVE_VOICES = [
 const END_CALL_TOOL = {
   type: "function",
   name: "end_call",
-  description: "Termina a chamada. Usar APENAS depois de o cliente confirmar o resumo e de o agente dizer a frase de fecho completa.",
+  description: "Termina a chamada. Usar APENAS depois de (a) confirmaste o pedido com o cliente e ele disse que está correto, (b) disseste a frase de fecho completa. Invocar imediatamente depois de (b), sem esperar despedida nem silêncio.",
   parameters: { type: "object", properties: {}, additionalProperties: false }
 };
 
