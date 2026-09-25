@@ -24,6 +24,7 @@ import {
   assinarWebhook,
   assinaturaValida,
   cabecalhoSip,
+  instrucoesComTelefoneOrigem,
   registarRotasSip,
   sessionIdDoEventoSip,
   sipHealth
@@ -185,6 +186,14 @@ test("SIP accept payload omits audio.output.speed (voice marin only)", () => {
   assert.equal(SESSION.audio.output.speed, DEFAULT_GPT_LIVE_SPEED);
 });
 
+test("SIP instructions receive only a normalized trusted network number", () => {
+  const from = '"Cliente" <sip:+351917318234@sip.telnyx.eu>;tag=x';
+  const instructions = instrucoesComTelefoneOrigem("Base Alice", from);
+  assert.match(instructions, /917318234/);
+  assert.doesNotMatch(instructions, /Cliente|telnyx\.eu|\+351/);
+  assert.equal(instrucoesComTelefoneOrigem("Base Alice", "<sip:invalid@host>"), "Base Alice");
+});
+
 test("session_id from Live webhooks; realtime.call.incoming ignored without session_id", () => {
   assert.equal(sessionIdDoEventoSip(incoming()), "sess_sip_1");
   assert.equal(sessionIdDoEventoSip(incoming({ type: "live.call.incoming" })), "sess_sip_1");
@@ -211,7 +220,10 @@ test("POST /api/openai/sip rejects invalid signature", async () => {
 test("live.transport.incoming accepts, attaches sideband, greets, does not session.start", async () => {
   const ctx = await startSip();
   try {
-    const r = await postWebhook(ctx.url, incoming({ sessionId: "sess_ok" }));
+    const r = await postWebhook(ctx.url, incoming({
+      sessionId: "sess_ok",
+      from: '"Cliente" <sip:+351917318234@sip.telnyx.eu>;tag=x'
+    }));
     assert.equal(r.status, 200);
     const body = await r.json();
     assert.equal(body.session_id, "sess_ok");
@@ -227,6 +239,8 @@ test("live.transport.incoming accepts, attaches sideband, greets, does not sessi
     assert.equal(session.audio.format, undefined);
     assert.equal(session.delegation.type, "responses");
     assert.match(session.instructions, /Alice pt-PT/);
+    assert.match(session.instructions, /917318234/);
+    assert.equal(SESSION.instructions, "Alice pt-PT");
 
     await wait(20);
     assert.equal(FakeWebSocket.instances.length, 1);

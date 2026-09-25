@@ -34,6 +34,8 @@ test("Grok rollback SIP uses GROK_VOICE in session.update; Live SIP defaults mar
   assert.doesNotMatch(sipSrc, /pt-BR/);
   assert.doesNotMatch(sipSrc, /GROK_VOICE\s*=/);
   assert.match(sipSrc, /voice: audio\.voice \|\| "marin"/);
+  assert.match(sipSrc, /const instrucoesComContexto = instrucoesComTelefoneOrigem\(instrucoes, this\.de\)/);
+  assert.match(sipSrc, /instructions: instrucoesComContexto/);
 });
 
 test("Grok/SIP instructions mandate PT-PT and forbid PT-BR with concrete pairs", () => {
