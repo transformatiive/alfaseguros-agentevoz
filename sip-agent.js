@@ -6,6 +6,7 @@
 import crypto from "node:crypto";
 import WebSocket from "ws";
 
+import { numeroDeOrigem } from "./telefone.js";
 import { montarTurnos } from "./turnos.js";
 import {
   GPT_LIVE_USER_AGENT,
@@ -80,6 +81,15 @@ export function cabecalhoSip(ev, nome = "From") {
   return headers.find(h => String(h?.name || "").toLowerCase() === wanted)?.value || "";
 }
 
+export function instrucoesComTelefoneOrigem(instrucoes, cabecalhoFrom) {
+  const telefone = numeroDeOrigem(cabecalhoFrom);
+  if (!telefone) return instrucoes;
+  return `${String(instrucoes || "").trim()}
+
+# Telefone de origem da chamada SIP
+O número de origem validado pela rede nesta chamada é ${telefone}. Quando confirmares o número de onde a pessoa está a ligar, usa estes nove dígitos e pede confirmação. Não inventes nem alteres dígitos. Se a pessoa indicar outro número português completo para contacto, confirma esse número diferente e usa-o como contacto.`;
+}
+
 function openaiHeaders(apiKey) {
   return {
     Authorization: `Bearer ${apiKey}`,
@@ -115,10 +125,12 @@ class ChamadaSipLive {
 
   async aceitar() {
     const { openaiBase, openaiKey, session } = this.cfg;
+    const instrucoes = instrucoesComTelefoneOrigem(session?.instructions, this.de);
+    const sessao = instrucoes === session?.instructions ? session : { ...session, instructions: instrucoes };
     const r = await httpFetch(this.cfg)(openaiLiveAcceptUrl(this.sessionId, openaiBase), {
       method: "POST",
       headers: openaiHeaders(openaiKey),
-      body: JSON.stringify({ session: liveSessionConfigForSipAccept(session) })
+      body: JSON.stringify({ session: liveSessionConfigForSipAccept(sessao) })
     });
     if (!r.ok) {
       const detalhe = await r.text().catch(() => "");
@@ -284,9 +296,10 @@ class ChamadaSipGrok {
 
   configurar() {
     const { instrucoes, voz, primeiraFala } = this.cfg;
+    const instrucoesComContexto = instrucoesComTelefoneOrigem(instrucoes, this.de);
     this.enviar({ type: "session.update", session: { voice: voz } });
     this.enviar({ type: "session.update", session: {
-      instructions: instrucoes,
+      instructions: instrucoesComContexto,
       turn_detection: { type: "server_vad", threshold: 0.9, silence_duration_ms: 800, prefix_padding_ms: 333, idle_timeout_ms: 10000 },
       reasoning: { effort: "none" },
       audio: { input: { transcription: { language_hint: "pt-PT", keyterms:
@@ -297,7 +310,7 @@ class ChamadaSipGrok {
       tool_choice: "auto"
     } });
     this.enviar({ type: "response.create", response: {
-      instructions: `${instrucoes}\n\nA tua primeira fala é exatamente, palavra por palavra: "${primeiraFala}"`
+      instructions: `${instrucoesComContexto}\n\nA tua primeira fala é exatamente, palavra por palavra: "${primeiraFala}"`
     } });
   }
 
