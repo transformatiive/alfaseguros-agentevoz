@@ -310,7 +310,7 @@ class ChamadaSipGrok {
       tool_choice: "auto"
     } });
     this.enviar({ type: "response.create", response: {
-      instructions: `${instrucoesComContexto}\n\nA tua primeira fala é exatamente, palavra por palavra: "${primeiraFala}"`
+      instructions: `${instrucoesComContexto}\n\nA tua primeira fala é exatamente, palavra por palavra, sem reformular, encurtar, omitir ou acrescentar: "${primeiraFala}". Cada quebra de linha é uma pausa curta; não a pronuncies. Diz só isso e fica em silêncio até o cliente responder.`
     } });
   }
 

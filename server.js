@@ -18,7 +18,8 @@ import {
   resolveGptLiveModel,
   resolveGptLiveSpeed,
   resolveGptLiveVoice,
-  resolveSipEngine
+  resolveSipEngine,
+  saudacaoParaTts
 } from "./live-session.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -45,7 +46,13 @@ const SIP_ENGINE = resolveSipEngine(process.env);
 const GROK_MODEL = process.env.GROK_MODEL || "grok-voice-think-fast-2.0"; // fixado: "latest" muda debaixo dos pés
 const GROK_VOICE = process.env.GROK_VOICE || "ara"; // "eve" é a voz por omissão da xAI, pensada para escuta longa; a Alfaseguros achou-a sem energia
 const PROMPT = fs.readFileSync(path.join(__dirname, "prompt_alfa.md"), "utf8");
-const FIRST_MESSAGE = "Olá, fala a Alice, assistente virtual da Alfaseguros. Os nossos consultores não conseguiram atender neste momento. Posso registar o seu pedido para que um consultor o contacte. Esta chamada é gravada. Em que posso ajudar?";
+const FIRST_MESSAGE = `Olá, bem-vindo à Alfa Seguros!
+
+Sou a Alice, a assistente virtual da Alfa Seguros.
+
+Neste momento, os nossos consultores não estão disponíveis para atender a sua chamada, mas não se preocupe, estou aqui para ajudar!
+
+Para começar, diga-me, por favor, em que posso ajudar?`;
 
 const FLOW_RULES = `# Tratamento do cliente (neutro quanto ao género, prioridade máxima)
 - NUNCA assumas o género do cliente a partir do nome, da voz ou de qualquer outro indício.
@@ -75,7 +82,8 @@ const FLOW_RULES = `# Tratamento do cliente (neutro quanto ao género, prioridad
 
 const CALL_BOOKENDS = `
 # Início da chamada
-A tua primeira fala é exatamente: "${FIRST_MESSAGE}"
+A tua primeira fala é exatamente o texto abaixo, palavra por palavra, sem reformular, encurtar, omitir ou acrescentar. Esta primeira fala é a exceção às regras de turnos curtos: diz o texto completo. Cada quebra de linha é uma pausa curta na fala; não a pronuncies. Diz esta fala já, sem esperar pelo cliente. Quando acabares, ficas em silêncio até o cliente responder:
+"${FIRST_MESSAGE}"
 
 # Terminar a chamada
 Só podes chamar a ferramenta end_call DEPOIS de cumprir estes dois passos e nada mais: (a) confirmaste o pedido com o cliente e ele disse que está correto, (b) disseste a frase de fecho completa. Depois de (b), invoca end_call imediatamente, sem esperar que o cliente se despeça ou fique em silêncio. Nunca termines a chamada antes da confirmação.
@@ -211,7 +219,8 @@ app.post("/api/session", async (req, res) => {
   try {
     if (req.body?.provider === "eleven") {
       // ElevenLabs Agents: o guião, o LLM e a voz vivem no agente configurado no painel da ElevenLabs.
-      // O servidor só assina o URL — a chave nunca chega ao browser.
+      // O servidor só assina o URL — a chave nunca chega ao browser. A saudação é o first_message
+      // (quebras de linha já viraram pausa curta de TTS). O agente tem de permitir o override de first_message.
       if (!ELEVEN_API_KEY || !ELEVEN_AGENT_ID) return res.status(503).json({ error: "elevenlabs indisponível: falta ELEVENLABS_API_KEY ou ELEVENLABS_AGENT_ID" });
       const r = await fetch(`${ELEVEN_BASE}/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(ELEVEN_AGENT_ID)}`, {
         headers: { "xi-api-key": ELEVEN_API_KEY }
@@ -220,7 +229,7 @@ app.post("/api/session", async (req, res) => {
       if (!r.ok) return res.status(r.status).json(data);
       return res.json({
         provider: "eleven", ws_url: data.signed_url, agent_id: ELEVEN_AGENT_ID,
-        model: "elevenlabs-agents", first_message: FIRST_MESSAGE
+        model: "elevenlabs-agents", first_message: saudacaoParaTts(FIRST_MESSAGE)
       });
     }
     if (req.body?.provider === "grok") {

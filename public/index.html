@@ -275,7 +275,7 @@ function replayOuAbertura(s,retoma){
     }
     pedeResposta(LING_RESP+' A ligação caiu por instantes e foi retomada; a conversa anterior está acima. Continua exatamente de onde estava, sem cumprimentar de novo e sem repetir o que já foi dito. Se estavas à espera de um dado do cliente, repete apenas essa pergunta, numa frase curta.');
   } else {
-    pedeResposta(LING_RESP+' A tua primeira fala é exatamente, palavra por palavra: "'+s.first_message+'"');
+    pedeResposta(LING_RESP+' A tua primeira fala é exatamente, palavra por palavra, sem reformular, encurtar, omitir ou acrescentar: "'+s.first_message+'". Cada quebra de linha é uma pausa curta; não a pronuncies. Diz só isso e fica em silêncio até o cliente responder.');
   }
 }
 async function esperarIce(connection){
@@ -307,9 +307,9 @@ function pedirPrimeiraFalaLive(retoma){
     return;
   }
   dc.send(JSON.stringify({type:'session.instructions.append',event_id:'greeting',delegation_id:null,
-    content:'A tua primeira fala nesta chamada é, palavra por palavra, em português europeu de Portugal (Lisboa, pt-PT — nunca brasileiro), exactamente este texto e nada mais. Diz já, sem esperar pelo cliente; depois fica a escutar:\n\n«'+liveFirst+'»'}));
+    content:'A tua primeira fala nesta chamada é, palavra por palavra, em português europeu de Portugal (Lisboa, pt-PT — nunca brasileiro), exactamente este texto e nada mais. Não reformules, não encurtes, não omitas nem acrescentes palavras. Esta primeira fala é a exceção às regras de turnos curtos: diz o texto completo. Cada quebra de linha é uma pausa curta; não a pronuncies. Diz já, sem esperar pelo cliente. Depois desta fala, ficas em silêncio até o cliente responder:\n\n«'+liveFirst+'»'}));
   dc.send(JSON.stringify({type:'session.commentary.append',event_id:'greeting-go',delegation_id:null,
-    content:'Começa agora a conversa, seguindo as instruções. Diz a saudação exacta e depois escuta.'}));
+    content:'Começa agora a conversa, seguindo as instruções. Diz a saudação exacta, com uma pausa curta em cada quebra de linha, e depois fica em silêncio até o cliente responder.'}));
 }
 function handleLiveEvent(ev){
   marcaAtividade();
@@ -424,7 +424,7 @@ async function ligarEleven(s){
   await new Promise((ok,ko)=>{
     ws=new WebSocket(s.ws_url); // URL já assinado pelo servidor; a chave nunca chega ao browser
     ws.onopen=()=>{
-      ws.send(JSON.stringify({type:'conversation_initiation_client_data'}));
+      ws.send(JSON.stringify({type:'conversation_initiation_client_data',conversation_config_override:{agent:{first_message:s.first_message}}}));
       micSrc=actx.createMediaStreamSource(stream);
       micProc=actx.createScriptProcessor(4096,1,1);
       micProc.onaudioprocess=e=>{if(ws&&ws.readyState===1){
