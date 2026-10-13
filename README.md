@@ -51,7 +51,10 @@ npm test
 
 - `TEXT_MODEL` (default `gpt-5.4-mini`, extração pós-chamada)
 - `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID`
-- `RESULT_WEBHOOK` (n8n; `""` desativa)
+- `RESULT_WEBHOOK` (n8n; `""` desativa o email)
+- `ZOHO_DESK_CLIENT_ID`, `ZOHO_DESK_CLIENT_SECRET`, `ZOHO_DESK_REFRESH_TOKEN` (ticket no fim da chamada; as mesmas do Supervisor Virtual). Sem elas o email sai e o ticket não é criado.
+- `ZOHO_DESK_ORG_ID` (default `683863304`, `desk.zoho.com`)
+- `ZOHO_DESK_DEPARTMENT_ID` (opcional; se faltar, usa o departamento de atendimento/geral/suporte)
 
 ### Transcrição: turnos
 

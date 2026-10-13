@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { corrigirEmailEmDados, emailDeContacto } from "./email.js";
+import { notificarZohoDesk } from "./zoho-ticket.js";
 import { corrigirTelefoneEmDados, diagSemOrigemDeCliente, juntarCampo, telefoneDeContacto } from "./telefone.js";
 import { registarRotasSip, sipHealth } from "./sip-agent.js";
 import {
@@ -329,13 +330,17 @@ async function extrairEEnviar(linhas, diag, origem = "alfa-voz-web") {
   // O consultor fica sempre com o número de onde a chamada veio, mesmo quando é o mesmo.
   const diagFinal = diag ? { ...diag, telefone_origem: numeroOrigem || diag.telefone_origem || "" } : diag;
 
+  const dataIso = new Date().toISOString();
+  const aviso = { resultado, transcript: linhas || [], diag: diagFinal, data: dataIso, origem };
   if (RESULT_WEBHOOK) {
     fetch(RESULT_WEBHOOK, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resultado, transcript: linhas || [], diag: diagFinal, data: new Date().toISOString(), origem })
+      body: JSON.stringify(aviso)
     }).catch(() => {});
   }
+  // O email continua a sair pelo n8n. O ticket leva o mesmo HTML e o encaminhamento do pedido.
+  notificarZohoDesk(aviso).catch(e => console.error("[zoho]", e?.message || e));
   return resultado;
 }
 
