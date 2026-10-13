@@ -179,12 +179,23 @@ export function liveSessionConfigForSipAccept(sessionOrOpts = {}) {
   return liveSessionConfig({ ...sessionOrOpts, omitSpeed: true });
 }
 
+/** Pausa curta entre frases da saudação, no TTS da ElevenLabs (Multilingual/Flash). */
+export const TTS_PAUSA_CURTA = '<break time="0.4s" />';
+
+/**
+ * A saudação guarda quebras de linha. No TTS, cada sequência de quebras vira uma pausa curta;
+ * as palavras e a pontuação ficam iguais.
+ */
+export function saudacaoParaTts(texto) {
+  return String(texto ?? "").replace(/[ \t]*\n+[ \t]*/g, ` ${TTS_PAUSA_CURTA} `).replace(/ {2,}/g, " ").trim();
+}
+
 export function gptLiveGreetingSpeakInstructions(firstMessage) {
-  return `A tua primeira fala nesta chamada é, palavra por palavra, em português europeu de Portugal (Lisboa, pt-PT — nunca brasileiro), exactamente este texto e nada mais. Diz já, sem esperar pelo cliente; depois fica a escutar:\n\n«${firstMessage}»`;
+  return `A tua primeira fala nesta chamada é, palavra por palavra, em português europeu de Portugal (Lisboa, pt-PT — nunca brasileiro), exactamente este texto e nada mais. Não reformules, não encurtes, não omitas nem acrescentes palavras. Esta primeira fala é a exceção às regras de turnos curtos: diz o texto completo. Cada quebra de linha é uma pausa curta; não a pronuncies. Diz já, sem esperar pelo cliente. Depois desta fala, ficas em silêncio até o cliente responder:\n\n«${firstMessage}»`;
 }
 
 export function gptLiveGreetingCommentary() {
-  return "Começa agora a conversa, seguindo as instruções. Diz a saudação exacta e depois escuta.";
+  return "Começa agora a conversa, seguindo as instruções. Diz a saudação exacta, com uma pausa curta em cada quebra de linha, e depois fica em silêncio até o cliente responder.";
 }
 
 export function gptLiveResumeInstructions() {
