@@ -20,7 +20,7 @@ export const GPT_LIVE_VOICES = [
 const END_CALL_TOOL = {
   type: "function",
   name: "end_call",
-  description: "Termina a chamada. Usar APENAS depois de (a) confirmaste o pedido com o cliente e ele disse que está correto, (b) disseste a frase de fecho completa. Invocar imediatamente depois de (b), sem esperar despedida nem silêncio.",
+  description: "Termina a chamada. Usar APENAS depois de (a) confirmaste o pedido com o cliente e ele disse que está correto, (b) disseste a frase de fecho completa (ou o fecho curto, no caminho curto). Invocar imediatamente depois de (b), sem esperar despedida nem silêncio.",
   parameters: { type: "object", properties: {}, additionalProperties: false }
 };
 
@@ -191,7 +191,7 @@ export function saudacaoParaTts(texto) {
 }
 
 export function gptLiveGreetingSpeakInstructions(firstMessage) {
-  return `A tua primeira fala nesta chamada é, palavra por palavra, em português europeu de Portugal (Lisboa, pt-PT — nunca brasileiro), exactamente este texto e nada mais. Não reformules, não encurtes, não omitas nem acrescentes palavras. Esta primeira fala é a exceção às regras de turnos curtos: diz o texto completo. Cada quebra de linha é uma pausa curta; não a pronuncies. Diz já, sem esperar pelo cliente. Depois desta fala, ficas em silêncio até o cliente responder:\n\n«${firstMessage}»`;
+  return `A tua primeira fala nesta chamada é, palavra por palavra, em português europeu de Portugal (Lisboa, pt-PT — nunca brasileiro), exactamente este texto e nada mais. Não reformules, não encurtes, não omitas nem acrescentes palavras. Esta primeira fala é a exceção às regras de turnos curtos: diz o texto completo. Cada quebra de linha é uma pausa curta; não a pronuncies. Diz já, sem esperar pelo cliente. Depois desta fala, ficas em silêncio até o cliente responder. Se o cliente começar a falar durante a saudação, páras logo e ouves; não a repetes nem a acabas.\n\n«${firstMessage}»`;
 }
 
 export function gptLiveGreetingCommentary() {

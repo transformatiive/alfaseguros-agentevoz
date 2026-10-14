@@ -16,18 +16,25 @@ const serverSrc = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const html = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const sipSrc = fs.readFileSync(path.join(root, "sip-agent.js"), "utf8");
 
-const SAUDACAO = `Olá, bem-vindo à Alfa Seguros!
+const SAUDACAO = `Alfa Seguros, sou a Alice, assistente virtual.
 
-Sou a Alice, a assistente virtual da Alfa Seguros.
+Os consultores estão ocupados, mas eu registo o seu pedido.
 
-Neste momento, os nossos consultores não estão disponíveis para atender a sua chamada, mas não se preocupe, estou aqui para ajudar!
-
-Para começar, diga-me, por favor, em que posso ajudar?`;
+Em que posso ajudar?`;
 
 test("a saudação no código é o texto exacto, com as quebras de linha", () => {
   assert.match(serverSrc, new RegExp(SAUDACAO.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.doesNotMatch(serverSrc, /Olá, fala a Alice/);
   assert.doesNotMatch(serverSrc, /Esta chamada é gravada/);
+  assert.doesNotMatch(serverSrc, /bem-vindo à Alfa Seguros/);
+});
+
+test("o cliente pode interromper a saudação em todos os motores", () => {
+  const corte = /Se o cliente começar a falar durante a saudação, páras logo e ouves/;
+  assert.match(gptLiveGreetingSpeakInstructions(SAUDACAO), corte);
+  assert.match(serverSrc, corte);
+  assert.match(sipSrc, corte);
+  assert.equal((html.match(new RegExp(corte.source, "g")) || []).length, 2);
 });
 
 test("GPT-Live diz a saudação tal e qual, pausa nas quebras e depois espera", () => {
@@ -55,14 +62,13 @@ test("Grok no browser e no SIP recebe a mesma ordem de não reformular e de espe
 test("no TTS, cada sequência de quebras de linha vira uma pausa curta e o texto falado mantém-se", () => {
   const falado = saudacaoParaTts(SAUDACAO);
   const frases = [
-    "Olá, bem-vindo à Alfa Seguros!",
-    "Sou a Alice, a assistente virtual da Alfa Seguros.",
-    "Neste momento, os nossos consultores não estão disponíveis para atender a sua chamada, mas não se preocupe, estou aqui para ajudar!",
-    "Para começar, diga-me, por favor, em que posso ajudar?"
+    "Alfa Seguros, sou a Alice, assistente virtual.",
+    "Os consultores estão ocupados, mas eu registo o seu pedido.",
+    "Em que posso ajudar?"
   ];
   assert.equal(falado, frases.join(` ${TTS_PAUSA_CURTA} `));
   assert.equal(saudacaoParaTts("uma linha"), "uma linha");
-  assert.equal((falado.match(/<break time="0\.4s" \/>/g) || []).length, 3);
+  assert.equal((falado.match(/<break time="0\.4s" \/>/g) || []).length, 2);
   assert.match(serverSrc, /first_message: saudacaoParaTts\(FIRST_MESSAGE\)/);
   assert.match(html, /conversation_config_override:\{agent:\{first_message:s\.first_message\}\}/);
 });
