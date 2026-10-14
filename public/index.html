@@ -378,7 +378,7 @@ async function ligarGrok(s,retoma){
         // language_hint é uma sugestão, não um bloqueio: mantém a qualidade do pt-PT (a esmagadora maioria
         // das chamadas) sem impedir o reconhecimento de outra língua. Confirmar em teste com uma chamada em inglês.
         audio:{input:{transcription:{language_hint:'pt-PT',keyterms:['Alice','Alfaseguros','telemóvel','apólice','matrícula','morada','código postal','consultor','registei','ecrã','autocarro','pequeno-almoço','carta de condução','desporto','utilizador','ficheiro','palavra-passe']}}},
-        tools:[{type:'function',name:'end_call',description:'Termina a chamada. Usar APENAS depois de o cliente confirmar o resumo e de o agente dizer a frase de fecho completa.',parameters:{type:'object',properties:{},additionalProperties:false}}],
+        tools:[{type:'function',name:'end_call',description:'Termina a chamada. Usar APENAS depois de o agente recolher os dados e dizer a frase de fecho.',parameters:{type:'object',properties:{},additionalProperties:false}}],
         tool_choice:'auto'
       }}));
       // primeira fala só depois de a configuração (voz/instruções) estar aplicada; fallback de 2s

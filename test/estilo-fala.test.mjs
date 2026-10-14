@@ -52,7 +52,7 @@ test("shared guião and Grok rollback get the same pt-PT human manner", () => {
 
 test("Alice still identifies as a virtual assistant, not a pretended human", () => {
   assert.match(promptSrc, /Não és humana e, se te perguntarem, dizes que és uma assistente virtual/);
-  assert.match(serverSrc, /sou a Alice, assistente virtual\./);
+  assert.match(serverSrc, /sou a Alice, a assistente virtual da Alfaseguros\./);
   assert.doesNotMatch(serverSrc, /Olá, fala a Alice, assistente virtual da Alfaseguros/);
   assert.doesNotMatch(aRules, /Nunca te apresentes como (um produto|uma voz|uma IA)/);
   assert.doesNotMatch(grokBlock, /Nunca te apresentes como (um produto|uma voz|uma IA)/);

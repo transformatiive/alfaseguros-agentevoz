@@ -1,4 +1,4 @@
-// Melhorias de 14 out 2026 depois dos dois primeiros dias em produção (itens 2, 3, 6, 7 e 9).
+// Melhorias de 14 out 2026 depois dos dois primeiros dias em produção (itens 1, 2, 3, 6, 7 e 9, com os ajustes do Nuno).
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -16,22 +16,26 @@ test("2: nunca diz que não consegue passar a chamada; promete a chamada da pess
   assert.match(prompt, /usa "para um consultor lhe ligar"/);
 });
 
-test("3: resume uma vez e, numa correção, repete só o dado corrigido", () => {
-  assert.match(prompt, /resume UMA ÚNICA VEZ/);
-  assert.match(prompt, /repetes SÓ o dado corrigido/);
-  assert.match(prompt, /Nunca voltas a ler o resumo inteiro/);
+test("3: sem resumo final, passa do último dado ao fecho", () => {
+  assert.match(prompt, /SEM RESUMO FINAL/);
+  assert.doesNotMatch(prompt, /CONFIRMAÇÃO: resume/);
+  assert.match(prompt, /7\. FECHO: logo a seguir ao último dado confirmado/);
+  assert.match(prompt, /"Obrigada, o seu pedido ficou registado/);
 });
 
-test("6: no máximo duas tentativas por dado, depois segue em frente", () => {
-  assert.match(prompt, /DUAS TENTATIVAS POR DADO, no máximo/);
-  assert.match(prompt, /NÃO voltas a pedir: diz "Não faz mal, o consultor confirma consigo"/);
-  assert.match(prompt, /ou se já gastaste as duas tentativas desse campo/);
-  assert.match(serverSrc, /'campos_por_confirmar' inclui os dados que a Alice tentou recolher duas vezes/);
+test("6: uma só tentativa por dado, depois o consultor confirma", () => {
+  assert.match(prompt, /UMA SÓ TENTATIVA POR DADO/);
+  assert.match(prompt, /NÃO voltas a pedir nem pedes para soletrar: diz "Não se preocupe, o consultor confirma consigo"/);
+  assert.doesNotMatch(prompt, /DUAS TENTATIVAS/);
+  assert.match(serverSrc, /'campos_por_confirmar' inclui os dados que a Alice tentou recolher sem ficarem certos/);
 });
 
 test("7: caminho curto para falar com alguém ou devolver chamada, sem NIF nem email", () => {
   assert.match(prompt, /## CAMINHO CURTO \(FALAR_COLABORADOR e DEVOLUCAO_CHAMADA\)/);
-  assert.match(prompt, /Não pedes NIF, email, nem se já é cliente/);
+  assert.match(prompt, /Não pedes nome, NIF, email, nem se já é cliente/);
+  assert.match(prompt, /pergunta só o motivo/);
+  assert.match(prompt, /Confirma o número de onde está a ligar, que já tens nos dados da chamada/);
+  assert.match(prompt, /vai ligar-lhe de volta o mais breve possível para dar seguimento ao seu pedido/);
   assert.match(prompt, /IDENTIFICAÇÃO \(sempre, depois da recolha do pedido, exceto no CAMINHO CURTO\)/);
   assert.match(prompt, /No CAMINHO CURTO usas o fecho curto/);
   assert.match(serverSrc, /fecho curto, no caminho curto/);

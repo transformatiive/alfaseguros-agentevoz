@@ -16,11 +16,9 @@ const serverSrc = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const html = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const sipSrc = fs.readFileSync(path.join(root, "sip-agent.js"), "utf8");
 
-const SAUDACAO = `Alfa Seguros, sou a Alice, assistente virtual.
+const SAUDACAO = `Olá, sou a Alice, a assistente virtual da Alfaseguros.
 
-Os consultores estão ocupados, mas eu registo o seu pedido.
-
-Em que posso ajudar?`;
+Os nossos consultores não estão disponíveis de momento, em que posso ajudar?`;
 
 test("a saudação no código é o texto exacto, com as quebras de linha", () => {
   assert.match(serverSrc, new RegExp(SAUDACAO.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
@@ -62,13 +60,12 @@ test("Grok no browser e no SIP recebe a mesma ordem de não reformular e de espe
 test("no TTS, cada sequência de quebras de linha vira uma pausa curta e o texto falado mantém-se", () => {
   const falado = saudacaoParaTts(SAUDACAO);
   const frases = [
-    "Alfa Seguros, sou a Alice, assistente virtual.",
-    "Os consultores estão ocupados, mas eu registo o seu pedido.",
-    "Em que posso ajudar?"
+    "Olá, sou a Alice, a assistente virtual da Alfaseguros.",
+    "Os nossos consultores não estão disponíveis de momento, em que posso ajudar?"
   ];
   assert.equal(falado, frases.join(` ${TTS_PAUSA_CURTA} `));
   assert.equal(saudacaoParaTts("uma linha"), "uma linha");
-  assert.equal((falado.match(/<break time="0\.4s" \/>/g) || []).length, 2);
+  assert.equal((falado.match(/<break time="0\.4s" \/>/g) || []).length, 1);
   assert.match(serverSrc, /first_message: saudacaoParaTts\(FIRST_MESSAGE\)/);
   assert.match(html, /conversation_config_override:\{agent:\{first_message:s\.first_message\}\}/);
 });

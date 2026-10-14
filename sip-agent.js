@@ -305,7 +305,7 @@ class ChamadaSipGrok {
       audio: { input: { transcription: { language_hint: "pt-PT", keyterms:
         ["Alice", "Alfaseguros", "telemóvel", "apólice", "matrícula", "morada", "código postal", "consultor", "registei", "ecrã", "autocarro", "pequeno-almoço", "carta de condução", "desporto", "utilizador", "ficheiro", "palavra-passe"] } } },
       tools: [{ type: "function", name: "end_call",
-        description: "Termina a chamada. Usar APENAS depois de o cliente confirmar o resumo e de o agente dizer a frase de fecho completa.",
+        description: "Termina a chamada. Usar APENAS depois de o agente recolher os dados e dizer a frase de fecho.",
         parameters: { type: "object", properties: {}, additionalProperties: false } }],
       tool_choice: "auto"
     } });
