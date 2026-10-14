@@ -46,13 +46,9 @@ const SIP_ENGINE = resolveSipEngine(process.env);
 const GROK_MODEL = process.env.GROK_MODEL || "grok-voice-think-fast-2.0"; // fixado: "latest" muda debaixo dos pés
 const GROK_VOICE = process.env.GROK_VOICE || "ara"; // "eve" é a voz por omissão da xAI, pensada para escuta longa; a Alfaseguros achou-a sem energia
 const PROMPT = fs.readFileSync(path.join(__dirname, "prompt_alfa.md"), "utf8");
-const FIRST_MESSAGE = `Olá, bem-vindo à Alfa Seguros!
+const FIRST_MESSAGE = `Olá, sou a Alice, a assistente virtual da Alfaseguros.
 
-Sou a Alice, a assistente virtual da Alfa Seguros.
-
-Neste momento, os nossos consultores não estão disponíveis para atender a sua chamada, mas não se preocupe, estou aqui para ajudar!
-
-Para começar, diga-me, por favor, em que posso ajudar?`;
+Os nossos consultores não estão disponíveis de momento, em que posso ajudar?`;
 
 const FLOW_RULES = `# Tratamento do cliente (neutro quanto ao género, prioridade máxima)
 - NUNCA assumas o género do cliente a partir do nome, da voz ou de qualquer outro indício.
@@ -82,11 +78,11 @@ const FLOW_RULES = `# Tratamento do cliente (neutro quanto ao género, prioridad
 
 const CALL_BOOKENDS = `
 # Início da chamada
-A tua primeira fala é exatamente o texto abaixo, palavra por palavra, sem reformular, encurtar, omitir ou acrescentar. Esta primeira fala é a exceção às regras de turnos curtos: diz o texto completo. Cada quebra de linha é uma pausa curta na fala; não a pronuncies. Diz esta fala já, sem esperar pelo cliente. Quando acabares, ficas em silêncio até o cliente responder:
+A tua primeira fala é exatamente o texto abaixo, palavra por palavra, sem reformular, encurtar, omitir ou acrescentar. Esta primeira fala é a exceção às regras de turnos curtos: diz o texto completo. Cada quebra de linha é uma pausa curta na fala; não a pronuncies. Diz esta fala já, sem esperar pelo cliente. Quando acabares, ficas em silêncio até o cliente responder. Se o cliente começar a falar durante a saudação, páras logo e ouves; não a repetes nem a acabas.
 "${FIRST_MESSAGE}"
 
 # Terminar a chamada
-Só podes chamar a ferramenta end_call DEPOIS de cumprir estes dois passos e nada mais: (a) confirmaste o pedido com o cliente e ele disse que está correto, (b) disseste a frase de fecho completa. Depois de (b), invoca end_call imediatamente, sem esperar que o cliente se despeça ou fique em silêncio. Nunca termines a chamada antes da confirmação.
+Só podes chamar a ferramenta end_call DEPOIS de cumprir estes dois passos e nada mais: (a) recolheste e confirmaste os dados do pedido com o cliente, (b) disseste a frase de fecho completa (ou o fecho curto, no caminho curto). Depois de (b), invoca end_call imediatamente, sem esperar que o cliente se despeça ou fique em silêncio. Nunca termines a chamada antes do fecho.
 `;
 
 const TRANSCRIPTION_PROMPT = "Chamada telefónica para a Alfaseguros, corretora de seguros em Portugal. O cliente pode falar português de Portugal, inglês, espanhol ou francês. Termos frequentes: Alice, Alfaseguros, apólice, sinistro, multirriscos, condomínio, frações, TVDE, matrícula, código postal, NIF, telemóvel, morada, carta de condução, danos próprios, responsabilidade civil, simulação, consultor. Aparecem nomes próprios portugueses, moradas e endereços de email.";
@@ -137,7 +133,7 @@ Língua falada: só português europeu de Portugal (Lisboa, pt-PT). Zero portugu
 
 # Captura de dados
 - Telefone, NIF, código postal e matrícula: converte para dígitos e lê de volta dígito a dígito para confirmar.
-- Email: repete-o naturalmente como palavra corrida para confirmar; só pedes para soletrar se não perceberes.
+- Email: repete-o naturalmente como palavra corrida para confirmar; se não perceberes, não peças para soletrar: o consultor confirma.
 - Formatos em Portugal: código postal 4 dígitos, hífen, 3 dígitos; NIF 9 dígitos; telemóvel 9 dígitos.
 
 # Prioridade quando as regras competem
@@ -203,7 +199,7 @@ Muda só a língua: as perguntas, a ordem e as confirmações do guião são exa
 ` + FLOW_RULES + PROMPT + CALL_BOOKENDS;
 
 const LIVE_DELEGATE_INSTRUCTIONS = `És o raciocínio de uma chamada inbound da Alice (Alfaseguros). A voz na linha já está a falar com o cliente em português europeu de Portugal (pt-PT, Lisboa — nunca brasileiro).
-Chama a ferramenta end_call APENAS depois de o cliente confirmar o resumo e de a Alice dizer a frase de fecho completa: (a) confirmaste o pedido com o cliente e ele disse que está correto, (b) disseste a frase de fecho completa. Invoca end_call imediatamente depois de (b), sem esperar despedida nem silêncio. Nunca desligues antes disso.`;
+Chama a ferramenta end_call APENAS depois de a Alice recolher os dados e dizer a frase de fecho completa: (a) recolheste e confirmaste os dados do pedido com o cliente, (b) disseste a frase de fecho completa (ou o fecho curto, no caminho curto). Invoca end_call imediatamente depois de (b), sem esperar despedida nem silêncio. Nunca desligues antes disso.`;
 
 export const sessionConfig = (voice = VOICE, input) => liveSessionConfig({
   model: LIVE_MODEL,
@@ -288,7 +284,7 @@ app.post("/api/session", async (req, res) => {
 const SCHEMA = {
   type: "object", additionalProperties: false,
   properties: {
-    categoria: { type: "string", enum: ["SIMULACAO","GESTAO_APOLICE","SINISTRO","CANCELAMENTO","PEDIDO_SEM_RESPOSTA","OUTRO"] },
+    categoria: { type: "string", enum: ["SIMULACAO","GESTAO_APOLICE","SINISTRO","CANCELAMENTO","FALAR_COLABORADOR","DEVOLUCAO_CHAMADA","RECLAMACAO","PEDIDO_SEM_RESPOSTA","OUTRO"] },
     produto: { type: "string" }, nome_cliente: { type: "string" }, telefone: { type: "string" }, email: { type: "string" }, nif: { type: "string" },
     cliente_existente: { type: "string", enum: ["sim","nao","desconhecido"] },
     dados_recolhidos: { type: "string" }, campos_por_confirmar: { type: "string" }, campos_em_falta: { type: "string" },
@@ -297,7 +293,7 @@ const SCHEMA = {
   },
   required: ["categoria","produto","nome_cliente","telefone","email","nif","cliente_existente","dados_recolhidos","campos_por_confirmar","campos_em_falta","quer_humano","prioridade","resumo","proximo_passo","mencionou_dados_saude"]
 };
-const EXTRACT_PROMPT = `Extrai, a partir da transcrição de uma chamada entre a assistente virtual Alice (Alfaseguros) e um cliente, os campos pedidos. Regras: 'dados_recolhidos' em formato 'campo: valor; campo: valor'. Pedir um seguro de saúde NÃO é informação clínica: o produto SAUDE, o número de pessoas, as idades e as coberturas pretendidas (dentária, óculos, estomatologia) são dados comerciais normais e TÊM de constar no resumo e em dados_recolhidos. mencionou_dados_saude=true só quando o cliente revelar algo clínico concreto sobre alguém: doença, sintoma, medicação, tratamento, cirurgia, gravidez, deficiência ou histórico clínico. Nesse caso é PROIBIDO escrever essa informação em qualquer campo, mas o resumo mantém o resto do pedido e acrescenta a frase 'O cliente mencionou informação clínica, a recolher por um consultor.' — nunca substituas o resumo inteiro por essa frase. 'campos_em_falta' = campos obrigatórios do produto que o cliente não soube. 'produto' usa os códigos: AUTOMOVEL, MULTIRRISCOS_HABITACAO, MULTIRRISCOS_CONDOMINIO, MULTIRRISCOS_EMPRESARIAL, SAUDE, TVDE, ACIDENTES_TRABALHO_INDIVIDUAL, ACIDENTES_TRABALHO_COLETIVO, RC_GERAL, RC_CONSTRUCAO, RC_EMPRESARIAL, RC_MEDICOS, RC_ARMAS_CACADOR, OBRAS_MONTAGENS, ANIMAIS, BICICLETAS_TROTINETAS, VIAGEM, EMBARCACAO, ACIDENTES_PESSOAIS (ou "" se não for simulação). Num pedido de SAUDE, 'dados_recolhidos' TEM de incluir 'tipo_seguro: particular' ou 'tipo_seguro: empresa', e os dados do tomador que tiverem sido recolhidos: 'tomador_nome', 'tomador_nif' e 'tomador_morada' (numa empresa, o nome é a designação social). O NIF do tomador vai também no campo 'nif'. Se o tipo de seguro ou algum dado do tomador não chegou a ser recolhido, mete-o em 'campos_em_falta'. 'cliente_existente': a Alice pergunta 'Já é cliente da Alfaseguros?' — a resposta é o que o cliente disser no turno seguinte, e um 'sim'/'não' isolado conta como resposta. Só pões 'desconhecido' se a pergunta não foi feita ou ficou sem resposta. 'email': junta tudo sem espaços ('soraia marina arroba gmail ponto com' é 'soraiamarina@gmail.com'); um email nunca leva espaços. 'quer_humano' só é true se o cliente pediu EXPLICITAMENTE para falar com uma pessoa; um colega ligar de volta é o fluxo normal e NÃO conta. 'prioridade' alta se sinistro urgente, pedido sem resposta, cliente irritado ou quer_humano=true. Resumo em 2 a 4 frases, português europeu, para um consultor humano. Campos vazios = "". Num pedido GESTAO_APOLICE de seguro automóvel, quando não houver número de apólice e a matrícula tiver sido recolhida, inclui 'matricula: ...' em 'dados_recolhidos' e no resumo. Quando 'cliente_existente' for 'sim', o NIF confirmado para identificar o cliente vai no campo 'nif'; se a Alice perguntou e a pessoa não soube, indica NIF em 'campos_em_falta'. Não inventes NIF.`;
+const EXTRACT_PROMPT = `Extrai, a partir da transcrição de uma chamada entre a assistente virtual Alice (Alfaseguros) e um cliente, os campos pedidos. Regras: 'categoria': FALAR_COLABORADOR quando o cliente só quer falar com um consultor ou colaborador (com nome ou não) e não deixa outro pedido; DEVOLUCAO_CHAMADA quando está a devolver uma chamada que recebeu da Alfaseguros; RECLAMACAO para queixas sobre o serviço, incluindo 'já liguei ou escrevi e ninguém respondeu'; PEDIDO_SEM_RESPOSTA SÓ quando o cliente não chegou a dizer o que queria (silêncio, desligou durante a saudação ou antes de fazer um pedido) — nunca a uses para um pedido real. Se o cliente pediu uma pessoa concreta, escreve 'pessoa_pedida: <nome>' em 'dados_recolhidos' e diz o nome no resumo e no 'proximo_passo'. 'dados_recolhidos' em formato 'campo: valor; campo: valor'. Pedir um seguro de saúde NÃO é informação clínica: o produto SAUDE, o número de pessoas, as idades e as coberturas pretendidas (dentária, óculos, estomatologia) são dados comerciais normais e TÊM de constar no resumo e em dados_recolhidos. mencionou_dados_saude=true só quando o cliente revelar algo clínico concreto sobre alguém: doença, sintoma, medicação, tratamento, cirurgia, gravidez, deficiência ou histórico clínico. Nesse caso é PROIBIDO escrever essa informação em qualquer campo, mas o resumo mantém o resto do pedido e acrescenta a frase 'O cliente mencionou informação clínica, a recolher por um consultor.' — nunca substituas o resumo inteiro por essa frase. 'campos_em_falta' = campos obrigatórios do produto que o cliente não soube. 'campos_por_confirmar' inclui os dados que a Alice tentou recolher sem ficarem certos e deixou para o consultor confirmar ('o consultor confirma consigo'). 'produto' usa os códigos: AUTOMOVEL, MULTIRRISCOS_HABITACAO, MULTIRRISCOS_CONDOMINIO, MULTIRRISCOS_EMPRESARIAL, SAUDE, TVDE, ACIDENTES_TRABALHO_INDIVIDUAL, ACIDENTES_TRABALHO_COLETIVO, RC_GERAL, RC_CONSTRUCAO, RC_EMPRESARIAL, RC_MEDICOS, RC_ARMAS_CACADOR, OBRAS_MONTAGENS, ANIMAIS, BICICLETAS_TROTINETAS, VIAGEM, EMBARCACAO, ACIDENTES_PESSOAIS (ou "" se não for simulação). Num pedido de SAUDE, 'dados_recolhidos' TEM de incluir 'tipo_seguro: particular' ou 'tipo_seguro: empresa', e os dados do tomador que tiverem sido recolhidos: 'tomador_nome', 'tomador_nif' e 'tomador_morada' (numa empresa, o nome é a designação social). O NIF do tomador vai também no campo 'nif'. Se o tipo de seguro ou algum dado do tomador não chegou a ser recolhido, mete-o em 'campos_em_falta'. 'cliente_existente': a Alice pergunta 'Já é cliente da Alfaseguros?' — a resposta é o que o cliente disser no turno seguinte, e um 'sim'/'não' isolado conta como resposta. Só pões 'desconhecido' se a pergunta não foi feita ou ficou sem resposta. 'email': junta tudo sem espaços ('soraia marina arroba gmail ponto com' é 'soraiamarina@gmail.com'); um email nunca leva espaços. 'quer_humano' só é true se o cliente pediu EXPLICITAMENTE para falar com uma pessoa; um colega ligar de volta é o fluxo normal e NÃO conta. 'prioridade' alta se sinistro urgente, pedido sem resposta, cliente irritado ou quer_humano=true. Resumo em 2 a 4 frases, português europeu, para um consultor humano. Campos vazios = "". Num pedido GESTAO_APOLICE de seguro automóvel, quando não houver número de apólice e a matrícula tiver sido recolhida, inclui 'matricula: ...' em 'dados_recolhidos' e no resumo. Quando 'cliente_existente' for 'sim', o NIF confirmado para identificar o cliente vai no campo 'nif'; se a Alice perguntou e a pessoa não soube, indica NIF em 'campos_em_falta'. Não inventes NIF.`;
 
 async function extrairEEnviar(linhas, diag, origem = "alfa-voz-web") {
   const transcript = (linhas || []).map(t => `${t.role === "user" ? "CLIENTE" : "ALICE"}: ${t.text}`).join("\n");

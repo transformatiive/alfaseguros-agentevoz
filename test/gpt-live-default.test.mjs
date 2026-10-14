@@ -97,10 +97,10 @@ test("closing ends automatically after confirmation and uses the requested wordi
   assert.match(promptSrc, /o mais rapidamente possível/);
   assert.doesNotMatch(promptSrc, /melhor proposta/);
   assert.doesNotMatch(promptSrc, /até ao final do próximo dia útil/);
-  assert.match(serverSrc, /depois de o cliente confirmar o resumo e de a Alice dizer a frase de fecho completa/);
+  assert.match(serverSrc, /depois de a Alice recolher os dados e dizer a frase de fecho completa/);
   assert.doesNotMatch(serverSrc, /o cliente se despediu ou ficou em silêncio/);
   assert.match(html, /o mais rapidamente possível/);
-  assert.match(liveSrc, /name: "end_call"[\s\S]*?\(a\) confirmaste o pedido com o cliente e ele disse que está correto, \(b\) disseste a frase de fecho completa/);
+  assert.match(liveSrc, /name: "end_call"[\s\S]*?\(a\) recolheste e confirmaste os dados do pedido com o cliente, \(b\) disseste a frase de fecho completa/);
   assert.doesNotMatch(liveSrc, /o cliente se despediu ou ficou em silêncio/);
 });
 

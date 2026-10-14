@@ -305,12 +305,12 @@ class ChamadaSipGrok {
       audio: { input: { transcription: { language_hint: "pt-PT", keyterms:
         ["Alice", "Alfaseguros", "telemóvel", "apólice", "matrícula", "morada", "código postal", "consultor", "registei", "ecrã", "autocarro", "pequeno-almoço", "carta de condução", "desporto", "utilizador", "ficheiro", "palavra-passe"] } } },
       tools: [{ type: "function", name: "end_call",
-        description: "Termina a chamada. Usar APENAS depois de o cliente confirmar o resumo e de o agente dizer a frase de fecho completa.",
+        description: "Termina a chamada. Usar APENAS depois de o agente recolher os dados e dizer a frase de fecho.",
         parameters: { type: "object", properties: {}, additionalProperties: false } }],
       tool_choice: "auto"
     } });
     this.enviar({ type: "response.create", response: {
-      instructions: `${instrucoesComContexto}\n\nA tua primeira fala é exatamente, palavra por palavra, sem reformular, encurtar, omitir ou acrescentar: "${primeiraFala}". Cada quebra de linha é uma pausa curta; não a pronuncies. Diz só isso e fica em silêncio até o cliente responder.`
+      instructions: `${instrucoesComContexto}\n\nA tua primeira fala é exatamente, palavra por palavra, sem reformular, encurtar, omitir ou acrescentar: "${primeiraFala}". Cada quebra de linha é uma pausa curta; não a pronuncies. Diz só isso e fica em silêncio até o cliente responder. Se o cliente começar a falar durante a saudação, páras logo e ouves; não a repetes nem a acabas.`
     } });
   }
 
