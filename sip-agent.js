@@ -117,7 +117,7 @@ class ChamadaSipLive {
     this.terminada = false;
     this.saudacaoEnviada = false;
     this.diag = {
-      motor: "GPT-Live-1 (telefone)",
+      motor: "GPT-Live-1.1 (telefone)",
       underruns: 0, cortes: 0, reconexoes: 0,
       falsosVad: 0, dobresResp: 0, destravas: 0, limpezas: 0
     };
@@ -373,7 +373,7 @@ export function sipHealth(cfg) {
   const audio = cfg.session?.audio?.output || {};
   return {
     engine: "gpt-live",
-    model: cfg.session?.model || "gpt-live-1",
+    model: cfg.session?.model || "gpt-live-1.1",
     voice: audio.voice || "marin",
     speed: audio.speed ?? 1,
     configured: !!(cfg.openaiKey && cfg.openaiWebhookSecret),

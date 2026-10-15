@@ -82,13 +82,13 @@ test("/health reports OpenAI voice and GROK_VOICE separately", async () => {
     const body = await r.json();
     assert.equal(r.status, 200);
     assert.equal(body.ok, true);
-    assert.equal(body.model, "gpt-live-1");
+    assert.equal(body.model, "gpt-live-1.1");
     assert.equal(body.voice, "marin");
     assert.equal(body.speed, 1.0);
     assert.equal(body.grokVoice, "ara");
     assert.equal(body.sip.engine, "gpt-live");
     assert.equal(body.sip.voice, "marin");
-    assert.equal(body.sip.model, "gpt-live-1");
+    assert.equal(body.sip.model, "gpt-live-1.1");
     assert.equal(body.sip.speed, 1);
   } finally {
     child.kill("SIGTERM");

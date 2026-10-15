@@ -1,4 +1,4 @@
-// Alice (Alfaseguros) — browser e SIP default: GPT-Live-1 (ChatGPT Voice).
+// Alice (Alfaseguros) — browser e SIP default: GPT-Live-1.1 (ChatGPT Voice).
 // SIP: Direct SIP OpenAI + sideband (sip-agent.js). Rollback: SIP_ENGINE=grok.
 // Endpoints: GET / (página), POST /api/session, POST /api/extract, POST /api/openai/sip
 import express from "express";

@@ -71,7 +71,7 @@ footer a{color:var(--bordeaux);font-weight:600;text-decoration:none}
   <h1>Fale com a <em>Alice</em></h1>
   <p class="sub">A Alice regista o seu pedido e um consultor da Alfaseguros liga-lhe de volta o mais rapidamente possível.</p>
   <div class="vers" id="vers">
-    <button class="sel" data-p="openai">GPT-Live 1</button>
+    <button class="sel" data-p="openai">GPT-Live 1.1</button>
     <button data-p="grok">SpaceX.ai Grok Live 2</button>
     <button data-p="eleven">ElevenLabs Agents</button>
   </div>
@@ -103,7 +103,7 @@ const SILENCIO_MS=5000,SILENCIO_CONFIRMACAO_MS=12000,VAD_DEBOUNCE_MS=250,MIC_GAT
 MOVEL=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||(navigator.maxTouchPoints>1&&/Mac/.test(navigator.platform)),
 BUF_INICIAL=MOVEL?0.7:0.45,BUF_MAX=1.0,RESPOSTA_LENTA_MS=7000;
 const vozTeste=new URLSearchParams(location.search).get('voz');
-// Default: GPT-Live 1 (gpt-live-1 / marin). Grok e ElevenLabs ficam no seletor; ?motor=grok|eleven força.
+// Default: GPT-Live 1.1 (gpt-live-1.1 / marin). Grok e ElevenLabs ficam no seletor; ?motor=grok|eleven força.
 const motorUrl=new URLSearchParams(location.search).get('motor');
 if(motorUrl==='grok'||motorUrl==='eleven'||motorUrl==='openai')provider=motorUrl;
 document.querySelectorAll('#vers button').forEach(b=>b.classList.toggle('sel',b.dataset.p===provider));
@@ -499,7 +499,7 @@ async function stop(){
   dial.classList.remove('on');vers.classList.remove('trancado');btn.setAttribute('aria-label','Iniciar chamada');
   if(transcript.length){
     st.textContent='';aguarde.style.display='flex';
-    let r={};try{r=await (await fetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript,diag:Object.assign({},diag,{reconexoes:reconnects,motor:provider==='grok'?'Versão B':provider==='eleven'?'ElevenLabs':'GPT-Live 1'})})})).json();}catch(_){}
+    let r={};try{r=await (await fetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript,diag:Object.assign({},diag,{reconexoes:reconnects,motor:provider==='grok'?'Versão B':provider==='eleven'?'ElevenLabs':'GPT-Live 1.1'})})})).json();}catch(_){}
     aguarde.style.display='none';
     const d=r.resultado;
     if(d){

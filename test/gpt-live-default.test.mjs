@@ -28,8 +28,8 @@ const promptSrc = fs.readFileSync(path.join(root, "prompt_alfa.md"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 const html = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 
-test("defaults are gpt-live-1 / marin / 1.0, not realtime-2.1 or bossa", () => {
-  assert.equal(DEFAULT_GPT_LIVE_MODEL, "gpt-live-1");
+test("defaults are gpt-live-1.1 / marin / 1.0, not realtime-2.1 or bossa", () => {
+  assert.equal(DEFAULT_GPT_LIVE_MODEL, "gpt-live-1.1");
   assert.equal(DEFAULT_GPT_LIVE_VOICE, "marin");
   assert.equal(DEFAULT_GPT_LIVE_SPEED, 1.0);
   assert.equal(DEFAULT_GPT_LIVE_DELEGATE_MODEL, "gpt-5.6-terra");
@@ -39,8 +39,8 @@ test("defaults are gpt-live-1 / marin / 1.0, not realtime-2.1 or bossa", () => {
 });
 
 test("OPENAI_LIVE_MODEL wins; leftover REALTIME_MODEL=gpt-realtime-2.1 does not", () => {
-  assert.equal(resolveGptLiveModel({}), "gpt-live-1");
-  assert.equal(resolveGptLiveModel({ REALTIME_MODEL: "gpt-realtime-2.1" }), "gpt-live-1");
+  assert.equal(resolveGptLiveModel({}), "gpt-live-1.1");
+  assert.equal(resolveGptLiveModel({ REALTIME_MODEL: "gpt-realtime-2.1" }), "gpt-live-1.1");
   assert.equal(resolveGptLiveModel({ OPENAI_LIVE_MODEL: "gpt-live-1-mini" }), "gpt-live-1-mini");
   assert.equal(resolveGptLiveModel({ REALTIME_MODEL: "gpt-live-1-mini" }), "gpt-live-1-mini");
   assert.equal(resolveGptLiveVoice({}), "marin");
@@ -58,7 +58,7 @@ test("live session shape is WebRTC GPT-Live (no audio.format, speed 1.0, end_cal
     delegateInstructions: "end_call only"
   });
   assert.equal(session.type, "live");
-  assert.equal(session.model, "gpt-live-1");
+  assert.equal(session.model, "gpt-live-1.1");
   assert.equal(session.audio.output.voice, "marin");
   assert.equal(session.audio.output.speed, 1.0);
   assert.equal(session.audio.format, undefined);
@@ -106,7 +106,7 @@ test("closing ends automatically after confirmation and uses the requested wordi
 
 test("browser default is GPT-Live WebRTC, not Grok/Ara", () => {
   assert.match(html, /provider='openai'/);
-  assert.match(html, /data-p="openai">GPT-Live 1/);
+  assert.match(html, /data-p="openai">GPT-Live 1.1/);
   assert.match(html, /session\.instructions\.append/);
   assert.match(html, /transport\.sdp/);
   assert.match(html, /session\.started/);
@@ -114,7 +114,7 @@ test("browser default is GPT-Live WebRTC, not Grok/Ara", () => {
 });
 
 test("README documents GPT-Live SIP cutover and webhook path", () => {
-  assert.match(readme, /gpt-live-1/);
+  assert.match(readme, /gpt-live-1.1/);
   assert.match(readme, /marin/);
   assert.match(readme, /1\.0/);
   assert.match(readme, /SIP/);
@@ -129,7 +129,7 @@ test("README documents GPT-Live SIP cutover and webhook path", () => {
   assert.doesNotMatch(sipSrc, /until a follow-up/i);
 });
 
-test("/health advertises gpt-live-1 marin 1.0; SIP default is gpt-live not grok", async () => {
+test("/health advertises gpt-live-1.1 marin 1.0; SIP default is gpt-live not grok", async () => {
   const port = String(18865 + Math.floor(Math.random() * 20));
   const child = spawn(process.execPath, ["server.js"], {
     cwd: root,
@@ -155,12 +155,12 @@ test("/health advertises gpt-live-1 marin 1.0; SIP default is gpt-live not grok"
     assert.equal(r.status, 200);
     assert.equal(body.ok, true);
     assert.equal(body.engine, "gpt-live");
-    assert.equal(body.model, "gpt-live-1");
+    assert.equal(body.model, "gpt-live-1.1");
     assert.equal(body.voice, "marin");
     assert.equal(body.speed, 1.0);
     assert.equal(body.grokVoice, "ara");
     assert.equal(body.sip.engine, "gpt-live");
-    assert.equal(body.sip.model, "gpt-live-1");
+    assert.equal(body.sip.model, "gpt-live-1.1");
     assert.equal(body.sip.voice, "marin");
     assert.equal(body.sip.speed, 1);
     assert.equal(body.sip.webhook, "/api/openai/sip");

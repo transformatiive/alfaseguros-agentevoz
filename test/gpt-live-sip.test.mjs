@@ -232,7 +232,7 @@ test("live.transport.incoming accepts, attaches sideband, greets, does not sessi
     assert.equal(ctx.calls[0].method, "POST");
     const session = ctx.calls[0].body.session;
     assert.equal(session.type, "live");
-    assert.equal(session.model, "gpt-live-1");
+    assert.equal(session.model, "gpt-live-1.1");
     assert.equal(session.audio.output.voice, "marin");
     assert.equal("speed" in session.audio.output, false);
     assert.equal(session.audio.output.speed, undefined);
@@ -345,7 +345,7 @@ test("end_call hangs up via Live hangup and extracts with origem alfa-voz-sip", 
     await wait(20);
     assert.equal(ctx.extracted.length, 1);
     assert.equal(ctx.extracted[0].origem, "alfa-voz-sip");
-    assert.equal(ctx.extracted[0].diag.motor, "GPT-Live-1 (telefone)");
+    assert.equal(ctx.extracted[0].diag.motor, "GPT-Live-1.1 (telefone)");
     assert.equal(ctx.extracted[0].transcript[0].role, "user");
     assert.equal(ctx.extracted[0].transcript[1].role, "assistant");
   } finally {
@@ -374,7 +374,7 @@ test("sipHealth reports gpt-live marin 1 without follow-up note", () => {
     session: SESSION
   });
   assert.equal(live.engine, "gpt-live");
-  assert.equal(live.model, "gpt-live-1");
+  assert.equal(live.model, "gpt-live-1.1");
   assert.equal(live.voice, "marin");
   assert.equal(live.speed, 1);
   assert.equal(live.configured, true);
@@ -386,7 +386,7 @@ test("sipHealth reports gpt-live marin 1 without follow-up note", () => {
   assert.equal(grok.voice, "ara");
 });
 
-test("/health advertises sip.engine=gpt-live marin gpt-live-1 speed 1", async () => {
+test("/health advertises sip.engine=gpt-live marin gpt-live-1.1 speed 1", async () => {
   const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
   const port = String(18965 + Math.floor(Math.random() * 20));
   const child = spawn(process.execPath, ["server.js"], {
@@ -397,7 +397,7 @@ test("/health advertises sip.engine=gpt-live marin gpt-live-1 speed 1", async ()
       OPENAI_API_KEY: "sk-test",
       OPENAI_WEBHOOK_SECRET: SECRET,
       OPENAI_PROJECT_ID: "proj_health",
-      OPENAI_LIVE_MODEL: "gpt-live-1",
+      OPENAI_LIVE_MODEL: "gpt-live-1.1",
       OPENAI_LIVE_VOICE: "marin",
       OPENAI_LIVE_SPEED: "1.0"
     },
@@ -420,7 +420,7 @@ test("/health advertises sip.engine=gpt-live marin gpt-live-1 speed 1", async ()
     const r = await fetch(`http://127.0.0.1:${port}/health`);
     const body = await r.json();
     assert.equal(body.sip.engine, "gpt-live");
-    assert.equal(body.sip.model, "gpt-live-1");
+    assert.equal(body.sip.model, "gpt-live-1.1");
     assert.equal(body.sip.voice, "marin");
     assert.equal(body.sip.speed, 1);
     assert.equal(body.sip.configured, true);

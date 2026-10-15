@@ -78,8 +78,8 @@ test("diagSemOrigemDeCliente tira o número de origem do diag do browser", () =>
   // /api/extract é público: aceitar telefone_origem de lá era deixar qualquer um escolher
   // o número de retorno e vê-lo apresentado como se viesse da rede.
   assert.deepEqual(
-    diagSemOrigemDeCliente({ motor: "GPT-Live-1", underruns: 2, telefone_origem: "+351999999999" }),
-    { motor: "GPT-Live-1", underruns: 2 }
+    diagSemOrigemDeCliente({ motor: "GPT-Live-1.1", underruns: 2, telefone_origem: "+351999999999" }),
+    { motor: "GPT-Live-1.1", underruns: 2 }
   );
   assert.deepEqual(diagSemOrigemDeCliente({ motor: "x" }), { motor: "x" });
   assert.equal(diagSemOrigemDeCliente(undefined), undefined);

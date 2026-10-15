@@ -60,7 +60,7 @@ test("Alice still identifies as a virtual assistant, not a pretended human", () 
 });
 
 test("speaking-style layer does not retune model, voice, speed, tools, or SIP routing", () => {
-  assert.match(liveSrc, /DEFAULT_GPT_LIVE_MODEL = "gpt-live-1"/);
+  assert.match(liveSrc, /DEFAULT_GPT_LIVE_MODEL = "gpt-live-1.1"/);
   assert.match(liveSrc, /DEFAULT_GPT_LIVE_VOICE = "marin"/);
   assert.match(liveSrc, /DEFAULT_GPT_LIVE_SPEED = 1\.0/);
   assert.match(liveSrc, /name: "end_call"/);

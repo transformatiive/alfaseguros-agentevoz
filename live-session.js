@@ -2,7 +2,7 @@
 // Adapted lightly from outbound-voice-agent `src/openai/live-session.ts`.
 // Do not copy the Telnyx media bridge / SIP stack.
 
-export const DEFAULT_GPT_LIVE_MODEL = "gpt-live-1";
+export const DEFAULT_GPT_LIVE_MODEL = "gpt-live-1.1";
 export const DEFAULT_GPT_LIVE_VOICE = "marin";
 export const DEFAULT_GPT_LIVE_SPEED = 1.0;
 export const DEFAULT_GPT_LIVE_DELEGATE_MODEL = "gpt-5.6-terra";
@@ -32,7 +32,7 @@ export function resolveGptLiveModel(env = process.env) {
   const dedicated = env.OPENAI_LIVE_MODEL?.trim();
   if (dedicated) return dedicated;
   const realtime = env.REALTIME_MODEL?.trim();
-  // A leftover Railway REALTIME_MODEL=gpt-realtime-2.1 must not keep Alice off gpt-live-1.
+  // A leftover Railway REALTIME_MODEL=gpt-realtime-2.1 must not keep Alice off gpt-live-1.1.
   if (realtime && realtime.startsWith("gpt-live")) return realtime;
   return DEFAULT_GPT_LIVE_MODEL;
 }
