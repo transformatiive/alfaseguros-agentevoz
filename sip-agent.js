@@ -365,7 +365,7 @@ export function sipHealth(cfg) {
   if (engine === "grok") {
     return {
       engine: "grok",
-      model: cfg.grokModel || "grok-voice-think-fast-2.0",
+      model: cfg.grokModel || "grok-voice-3.0",
       voice: cfg.voz || "ara",
       grok: !!(cfg.xaiKey && cfg.segredoWebhook)
     };
