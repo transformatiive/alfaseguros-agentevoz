@@ -6,6 +6,7 @@
 import crypto from "node:crypto";
 import WebSocket from "ws";
 
+import { descreverErro, criarFiltroFalhas } from "./falha.js";
 import { numeroDeOrigem } from "./telefone.js";
 import { montarTurnos } from "./turnos.js";
 import {
@@ -260,8 +261,12 @@ class ChamadaSipLive {
       return;
     }
     console.log(`[sip-live ${this.sessionId}] ${this.fragmentos.length} fragmentos -> ${transcript.length} turnos`);
-    this.cfg.extrair(transcript, { ...this.diag, telefone_origem: this.de }, "alfa-voz-sip")
-      .catch(e => console.error(`[sip-live ${this.sessionId}] extração:`, e?.message || e));
+    const diag = { ...this.diag, telefone_origem: this.de };
+    this.cfg.extrair(transcript, diag, "alfa-voz-sip")
+      .catch(e => {
+        console.error(`[sip-live ${this.sessionId}] extração: ${descreverErro(e)}`);
+        this.cfg.registarFalha?.(transcript, diag, "extracao");
+      });
   }
 }
 
@@ -355,8 +360,12 @@ class ChamadaSipGrok {
     this.despejarUser();
     this.cfg.aoTerminar(this.callId);
     if (!this.transcript.length) { console.log(`[sip ${this.callId}] sem transcrição, nada a registar`); return; }
-    this.cfg.extrair(this.transcript, { ...this.diag, telefone_origem: this.de }, "alfa-voz-sip")
-      .catch(e => console.error(`[sip ${this.callId}] extração:`, e?.message || e));
+    const diag = { ...this.diag, telefone_origem: this.de };
+    this.cfg.extrair(this.transcript, diag, "alfa-voz-sip")
+      .catch(e => {
+        console.error(`[sip ${this.callId}] extração: ${descreverErro(e)}`);
+        this.cfg.registarFalha?.(this.transcript, diag, "extracao");
+      });
   }
 }
 
@@ -391,6 +400,8 @@ export function registarRotasSip(app, cfg) {
   const emCurso = new Map();
   const vistos = new Map();
   const aoTerminar = id => emCurso.delete(id);
+  // Uma chamada falhada chega muitas vezes em duas pernas: um só ticket por número.
+  const primeiraFalhaDoNumero = criarFiltroFalhas();
   const engine = cfg.engine || resolveSipEngine();
 
   const webhookLive = async (req, res) => {
@@ -433,6 +444,8 @@ export function registarRotasSip(app, cfg) {
     } catch (e) {
       emCurso.delete(sessionId);
       console.error(`[sip-live ${sessionId}] accept:`, e?.message || e);
+      // Sem isto o cliente perdia-se: para o Ringover a chamada foi atendida, não há ticket de perdida.
+      if (primeiraFalhaDoNumero(de)) cfg.registarFalha?.([], { ...chamada.diag, telefone_origem: de }, "accept");
       return res.status(502).json({ error: "accept falhou" });
     }
     chamada.ligarSideband();

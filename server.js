@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { corrigirEmailEmDados, emailDeContacto } from "./email.js";
 import { corrigirTelefoneEmDados, diagSemOrigemDeCliente, juntarCampo, telefoneDeContacto } from "./telefone.js";
 import { registarRotasSip, sipHealth } from "./sip-agent.js";
+import { resultadoDeFalha } from "./falha.js";
 import {
   GPT_LIVE_USER_AGENT,
   liveInputFromTranscript,
@@ -306,8 +307,8 @@ async function extrairEEnviar(linhas, diag, origem = "alfa-voz-web") {
       text: { format: { type: "json_schema", name: "resultado_chamada", strict: true, schema: SCHEMA } }
     })
   });
-  const data = await r.json();
-  if (!r.ok) { const e = new Error("extracao"); e.status = r.status; e.data = data; throw e; }
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(`extracao ${r.status}`); e.status = r.status; e.data = data; throw e; }
   const txt = data.output?.flatMap(o => o.content || []).find(c => c.type === "output_text")?.text || "{}";
   const resultado = JSON.parse(txt);
 
@@ -325,13 +326,25 @@ async function extrairEEnviar(linhas, diag, origem = "alfa-voz-web") {
   // O consultor fica sempre com o número de onde a chamada veio, mesmo quando é o mesmo.
   const diagFinal = diag ? { ...diag, telefone_origem: numeroOrigem || diag.telefone_origem || "" } : diag;
 
-  if (RESULT_WEBHOOK) {
-    fetch(RESULT_WEBHOOK, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resultado, transcript: linhas || [], diag: diagFinal, data: new Date().toISOString(), origem })
-    }).catch(() => {});
-  }
+  enviarResultado(resultado, linhas, diagFinal, origem);
+  return resultado;
+}
+
+function enviarResultado(resultado, linhas, diag, origem) {
+  if (!RESULT_WEBHOOK) return;
+  fetch(RESULT_WEBHOOK, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resultado, transcript: linhas || [], diag, data: new Date().toISOString(), origem })
+  }).catch(e => console.error("[resultado] webhook:", e?.message || e));
+}
+
+// Falha técnica numa chamada por telefone: o cliente não pode ficar sem ticket. Ver falha.js.
+function registarFalha(linhas, diag, motivo, origem = "alfa-voz-sip") {
+  const { telefone, origem: numeroOrigem } = telefoneDeContacto("", diag?.telefone_origem);
+  const resultado = resultadoDeFalha({ telefone, motivo });
+  const diagFinal = diag ? { ...diag, telefone_origem: numeroOrigem || diag.telefone_origem || "" } : diag;
+  enviarResultado(resultado, linhas, diagFinal, origem);
   return resultado;
 }
 
@@ -356,7 +369,8 @@ const sipCfg = {
   xaiBase: XAI_BASE, xaiKey: XAI_API_KEY, segredoWebhook: XAI_WEBHOOK_SECRET,
   grokModel: GROK_MODEL,
   instrucoes: GROK_INSTRUCTIONS, voz: GROK_VOICE,
-  extrair: extrairEEnviar
+  extrair: extrairEEnviar,
+  registarFalha
 };
 registarRotasSip(app, sipCfg);
 
