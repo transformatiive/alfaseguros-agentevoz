@@ -14,7 +14,7 @@ Rollback de emergência: `SIP_ENGINE=grok` (tronco xAI + `POST /api/xai/call`).
 | **SIP Ringover** | **GPT-Live Direct SIP** | `gpt-live-1` / `marin` / `1.0` | Webhook `POST /api/openai/sip`. Áudio não passa por este processo. |
 | Browser Grok | opcional (`?motor=grok`) | `GROK_MODEL` / `GROK_VOICE` (ara) | Token xAI + WebSocket. |
 | Browser ElevenLabs | opcional | agente no painel ElevenLabs | Signed URL. |
-| SIP Grok | só `SIP_ENGINE=grok` | `grok-voice-think-fast-2.0` / ara | Emergência. Reapontar o tronco à xAI. |
+| SIP Grok | só `SIP_ENGINE=grok` | `grok-voice-3.0` / ara | Emergência. Reapontar o tronco à xAI. |
 
 `GET /health` anuncia o default GPT-Live (`model`, `voice`, `speed`) e `sip.engine=gpt-live`, `sip.voice=marin`, `sip.model=gpt-live-1`, `sip.speed=1` quando o Direct SIP Live está configurado.
 
@@ -44,7 +44,7 @@ npm test
 ### Grok (browser opcional / rollback SIP)
 
 - `XAI_API_KEY`, `XAI_WEBHOOK_SECRET`
-- `GROK_MODEL` (default `grok-voice-think-fast-2.0`)
+- `GROK_MODEL` (default `grok-voice-3.0`)
 - `GROK_VOICE` (default `ara`)
 
 ### Outros

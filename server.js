@@ -44,7 +44,7 @@ const XAI_WEBHOOK_SECRET = process.env.XAI_WEBHOOK_SECRET; // rollback SIP_ENGIN
 const OPENAI_WEBHOOK_SECRET = process.env.OPENAI_WEBHOOK_SECRET; // dashboard OpenAI → POST /api/openai/sip
 const OPENAI_PROJECT_ID = process.env.OPENAI_PROJECT_ID; // sip:$OPENAI_PROJECT_ID@sip.api.openai.com;transport=tls
 const SIP_ENGINE = resolveSipEngine(process.env);
-const GROK_MODEL = process.env.GROK_MODEL || "grok-voice-think-fast-2.0"; // fixado: "latest" muda debaixo dos pés
+const GROK_MODEL = process.env.GROK_MODEL || "grok-voice-3.0"; // fixado: "latest" muda debaixo dos pés
 const GROK_VOICE = process.env.GROK_VOICE || "ara"; // "eve" é a voz por omissão da xAI, pensada para escuta longa; a Alfaseguros achou-a sem energia
 const PROMPT = fs.readFileSync(path.join(__dirname, "prompt_alfa.md"), "utf8");
 const FIRST_MESSAGE = `Olá, sou a Alice, a assistente virtual da Alfaseguros.
